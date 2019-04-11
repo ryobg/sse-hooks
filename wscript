@@ -42,7 +42,7 @@ able to remove the build directory safely, so it should never be given as . or s
 APPNAME = 'sse-hooks'
 ''' Used to specify the generated executable names and the generated distribution archive name. '''
 
-VERSION = open ('VERSION', 'r').readline ().strip () 
+VERSION = open ('VERSION', 'r').readline ().strip ().replace (',', '.') 
 ''' The version field is used accross the project: for distro tars, for documentation, for file
 stamps and etc. It is taken from central file - useful to share accross its users. '''
 

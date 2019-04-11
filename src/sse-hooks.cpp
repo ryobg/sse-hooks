@@ -23,25 +23,23 @@
  * @ingroup Public API
  *
  * @details
- * n / a
+ * Implements the public API.
  */
 
 #include <sse-hooks/sse-hooks.h>
-#include <type_traits>
+#include <array>
 
 //--------------------------------------------------------------------------------------------------
 
 SSEH_API void SSEH_CCONV
-sseh_version (int* api, int* impl)
+sseh_version (int* api, int* maj, int* imp)
 {
-    if (api) *api = SSEH_API_VERSION;
-    if (impl)
-    {
-        double ver =
+    constexpr std::array<int, 3> ver = {
 #include "../VERSION"
-        ;
-        *impl = int ((ver - int (ver)) * 10); // Note that "10" depends on VERSION minor size
-    }
+    };
+    if (api) *api = ver[0];
+    if (maj) *maj = ver[1];
+    if (imp) *imp = ver[2];
 }
 
 //--------------------------------------------------------------------------------------------------

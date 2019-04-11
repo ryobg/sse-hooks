@@ -31,9 +31,6 @@
 #ifndef SSEH_SSEHOOKS_H
 #define SSEH_SSEHOOKS_H
 
-/** The version of this API in compile time. */
-#define SSEH_API_VERSION (1)
-
 #include <sse-hooks/platform.h>
 
 #ifdef __cplusplus
@@ -46,15 +43,28 @@ extern "C" {
  * Run-time version of this API and the implementation details.
  *
  * This function can be used to detect in run-time what kind of feature & fixes
- * on the API, the loaded SSEH is compiled with. It also tells what version is
- * the actual implementation - not all changes are visible on the API.
+ * on the API, the loaded SSEH is compiled with. This function is the only one,
+ * which is guaranteed to preseve through the whole lifecycle of this product.
  *
- * @param[out] api (optional) version.
- * @param[out] implementation (optional) version
+ * The @param api tells what version is the current API. Any version different
+ * than the one expected guarantees a broken interface. Most likely it will
+ * mean that a function is missing or its prototype is different.
+ *
+ * The @param maj describes major, but compatible changes within the API. Maybe
+ * a new function is added or the behaviour of an old one was extended in
+ * compatible way i.e. it won't break the callee.
+ *
+ * The @param imp is an implementation detail, in most cases may not be of
+ * interest. It is reserved for patches, bug fixes, maybe documentation updates
+ * re-release of something and etc. It is used mostly as kind of timestamp.
+ *
+ * @param[out] api (optional) version
+ * @param[out] maj (optional) version
+ * @param[out] imp (optional) version
  */
 
 SSEH_API void SSEH_CCONV
-sseh_version (int* api, int* implementation);
+sseh_version (int* api, int* maj, int* imp);
 
 /******************************************************************************/
 

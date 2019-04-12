@@ -28,6 +28,7 @@
 
 #include <sse-hooks/sse-hooks.h>
 #include <array>
+#include <windows.h>
 
 //--------------------------------------------------------------------------------------------------
 
@@ -43,3 +44,125 @@ sseh_version (int* api, int* maj, int* imp)
 }
 
 //--------------------------------------------------------------------------------------------------
+
+SSEH_API void SSEH_CCONV
+sseh_last_error (size_t* size, char* message)
+{
+
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_init ()
+{
+    return 1;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API void SSEH_CCONV
+sseh_uninit ()
+{
+
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_map_hook (const char* name, uintptr_t address)
+{
+    return 1;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_find_address (const char* module, const char* name, uintptr_t* address)
+{
+    HMODULE h;
+    if (!::GetModuleHandleEx (0, module, &h))
+    {
+        return 0;
+    }
+
+    FARPROC p = ::GetProcAddress (h, name);
+    ::FreeLibrary (h);
+
+    if (p)
+    {
+        static_assert (sizeof (uintptr_t) == sizeof (p), "FARPROC unconvertible to uintptr_t");
+        *address = reinterpret_cast<uintptr_t> (p);
+        return 1;
+    }
+
+    return 0;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API void SSEH_CCONV
+sseh_hook_name (uintptr_t address, size_t* size, char* name)
+{
+
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API void SSEH_CCONV
+sseh_hook_address (const char* name, uintptr_t* address)
+{
+
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API void SSEH_CCONV
+sseh_hook_status (const char* name, int* enabled)
+{
+
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_detour (const char* name, uintptr_t address, uintptr_t* original)
+{
+    return 1;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_enable_hooks ()
+{
+    return 1;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_disable_hooks ()
+{
+    return 1;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API void SSEH_CCONV
+sseh_execute (const char* command, void* arg)
+{
+
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API sseh_api SSEH_CCONV
+sseh_make_api ()
+{
+    sseh_api api;
+    return api;
+}
+
+//--------------------------------------------------------------------------------------------------
+

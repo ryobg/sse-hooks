@@ -343,11 +343,29 @@ typedef void (SSEH_CCONV* sseh_disable_hooks_t) ();
 
 /******************************************************************************/
 
-/** Set of function pointers as found in this file */
-typedef struct
-{
+/**
+ * Execute custom command.
+ *
+ * This is highly implementation specific and may change any moment. It is like
+ * patch hole for development use.
+ *
+ * @param[in] command identifier
+ * @param[in,out] arg to pass in or out data
+ */
 
-    uintptr_t previous;
+SSEH_API void SSEH_CCONV
+sseh_execute (const char* command, void* arg);
+
+/** @see #sseh_execute() */
+
+typedef void (SSEH_CCONV* sseh_execute_t) ();
+
+/******************************************************************************/
+
+/** Set of function pointers as found in this file */
+struct sseh_api_v1
+{
+    /** Holds a pointer to compatible extensions of the current API. */
     uintptr_t next;
 
 	/** @see #sseh_version() */
@@ -374,8 +392,12 @@ typedef struct
 	sseh_enable_hooks_t enable_hooks;
 	/** @see #sseh_disable_hooks() */
 	sseh_disable_hooks_t disable_hooks;
-}
-sseh_api;
+	/** @see #sseh_execute() */
+	sseh_execute_t execute;
+};
+
+/** Points to the current API version in use. */
+typedef struct sseh_api_v1 sseh_api;
 
 /******************************************************************************/
 
@@ -390,7 +412,7 @@ sseh_make_api ();
 
 /** @see #sseh_make_api() */
 
-typedef void (SSEH_CCONV* sseh_make_api_t) ();
+typedef sseh_api (SSEH_CCONV* sseh_make_api_t) ();
 
 /******************************************************************************/
 

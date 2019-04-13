@@ -28,7 +28,53 @@
 
 #include <sse-hooks/sse-hooks.h>
 #include <array>
+#include <locale>
+#include <codecvt>
+#include <algorithm>
 #include <windows.h>
+
+//--------------------------------------------------------------------------------------------------
+
+/// Supports SSEH specific errors in a manner of #GetLastError() and #FormatMessage()
+static thread_local std::string sseh_error;
+
+//--------------------------------------------------------------------------------------------------
+
+typedef std::wstring_convert<std::codecvt_utf8_utf16<TCHAR>, TCHAR>
+	convert_utf8_tchar;
+
+static_assert (std::is_same<std::wstring::value_type, TCHAR>::value, "Not a _UNICODE build.");
+
+/// Safe convert from UTF-8 (Skyrim) encoding to UTF-16 (Windows).
+
+static bool
+utf8_to_utf16 (char const* bytes, std::wstring& out)
+{
+    sseh_error.clear ();
+    if (bytes) try {
+        out = convert_utf8_tchar ().from_bytes (bytes);
+    }
+    catch (std::exception const& ex) {
+        sseh_error = ex.what ();
+        return false;
+    }
+    return true;
+}
+
+/// Safe convert from UTF-16 (Windows) encoding to UTF-8 (Skyrim).
+
+static bool
+utf16_to_utf8 (wchar_t const* wide, std::string& out)
+{
+    if (wide) try {
+        out = convert_utf8_tchar ().to_bytes (wide);
+    }
+    catch (std::exception const& ex) {
+        sseh_error = ex.what ();
+        return false;
+    }
+    return true;
+}
 
 //--------------------------------------------------------------------------------------------------
 
@@ -48,7 +94,34 @@ sseh_version (int* api, int* maj, int* imp)
 SSEH_API void SSEH_CCONV
 sseh_last_error (size_t* size, char* message)
 {
+	auto err = ::GetLastError ();
+	if (!err)
+    {
+        *size = 0;
+        if (message) *message = 0;
+        return;
+    }
 
+    LPTSTR buff = nullptr;
+    FormatMessage (
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr, err, MAKELANGID (LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPTSTR) &buff, 0, nullptr);
+
+    std::string m;
+    if (!utf16_to_utf8 (buff, m))
+    {
+        ::LocalFree (buff);
+        return;
+    }
+    ::LocalFree (buff);
+
+    if (message)
+    {
+        if (!*size) *message = 0;
+        else *std::copy_n (m.cbegin (), std::min (*size-1, m.size ()), message) = '\0';
+    }
+    *size = m.size ();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -56,7 +129,7 @@ sseh_last_error (size_t* size, char* message)
 SSEH_API int SSEH_CCONV
 sseh_init ()
 {
-    return 1;
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -72,7 +145,7 @@ sseh_uninit ()
 SSEH_API int SSEH_CCONV
 sseh_map_hook (const char* name, uintptr_t address)
 {
-    return 1;
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -81,46 +154,50 @@ SSEH_API int SSEH_CCONV
 sseh_find_address (const char* module, const char* name, uintptr_t* address)
 {
     HMODULE h;
-    if (!::GetModuleHandleEx (0, module, &h))
-    {
-        return 0;
-    }
+    std::wstring wm;
 
-    FARPROC p = ::GetProcAddress (h, name);
+    if (!utf8_to_utf16 (module, wm))
+        return false;
+
+    if (!::GetModuleHandleEx (0, wm.empty () ? nullptr : wm.data (), &h))
+        return false;
+
+    auto p = ::GetProcAddress (h, name);
+
     ::FreeLibrary (h);
 
     if (p)
     {
         static_assert (sizeof (uintptr_t) == sizeof (p), "FARPROC unconvertible to uintptr_t");
         *address = reinterpret_cast<uintptr_t> (p);
-        return 1;
+        return true;
     }
 
-    return 0;
+    return false;
 }
 
 //--------------------------------------------------------------------------------------------------
 
-SSEH_API void SSEH_CCONV
+SSEH_API int SSEH_CCONV
 sseh_hook_name (uintptr_t address, size_t* size, char* name)
 {
-
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
 
-SSEH_API void SSEH_CCONV
+SSEH_API int SSEH_CCONV
 sseh_hook_address (const char* name, uintptr_t* address)
 {
-
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
 
-SSEH_API void SSEH_CCONV
+SSEH_API int SSEH_CCONV
 sseh_hook_status (const char* name, int* enabled)
 {
-
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -128,7 +205,7 @@ sseh_hook_status (const char* name, int* enabled)
 SSEH_API int SSEH_CCONV
 sseh_detour (const char* name, uintptr_t address, uintptr_t* original)
 {
-    return 1;
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -136,7 +213,7 @@ sseh_detour (const char* name, uintptr_t address, uintptr_t* original)
 SSEH_API int SSEH_CCONV
 sseh_enable_hooks ()
 {
-    return 1;
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -144,15 +221,15 @@ sseh_enable_hooks ()
 SSEH_API int SSEH_CCONV
 sseh_disable_hooks ()
 {
-    return 1;
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
 
-SSEH_API void SSEH_CCONV
+SSEH_API int SSEH_CCONV
 sseh_execute (const char* command, void* arg)
 {
-
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -160,7 +237,21 @@ sseh_execute (const char* command, void* arg)
 SSEH_API sseh_api SSEH_CCONV
 sseh_make_api ()
 {
-    sseh_api api;
+    sseh_api api      = {};
+    api.next          = 0;
+	api.version       = sseh_version;
+	api.last_error    = sseh_last_error;
+	api.init          = sseh_init;
+	api.uninit        = sseh_uninit;
+	api.map_hook      = sseh_map_hook;
+	api.find_address  = sseh_find_address;
+	api.hook_name     = sseh_hook_name;
+	api.hook_address  = sseh_hook_address;
+	api.hook_status   = sseh_hook_status;
+	api.detour        = sseh_detour;
+	api.enable_hooks  = sseh_enable_hooks;
+	api.disable_hooks = sseh_disable_hooks;
+	api.execute       = sseh_execute;
     return api;
 }
 

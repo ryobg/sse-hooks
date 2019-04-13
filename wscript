@@ -56,7 +56,8 @@ def configure(conf):
 
     if conf.env['CXX_NAME'] is 'gcc':
         conf.check_cxx (msg="Checking for '-std=c++14'", cxxflags='-std=c++14') 
-        conf.env.append_unique('CXXFLAGS', ['-std=c++14', "-O2", "-Wall"])
+        conf.env.append_unique('CXXFLAGS', \
+                ['-std=c++14', "-O2", "-Wall", "-D_UNICODE", "-DUNICODE"])
         conf.env.append_unique('LDFLAGS', ['-lpthread'])
     elif conf.env['CXX_NAME'] is 'msvc':
         conf.env.append_unique('CXXFLAGS', ['/EHsc', '/MT', '/O2'])

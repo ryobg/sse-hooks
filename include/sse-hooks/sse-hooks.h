@@ -163,7 +163,7 @@ sseh_init ();
 
 /** @see #sseh_init() */
 
-typedef void (SSEH_CCONV* sseh_init_t) ();
+typedef int (SSEH_CCONV* sseh_init_t) ();
 
 /**
  * Uninitialize (pre-init state) SSEH.
@@ -211,7 +211,7 @@ sseh_map_hook (const char* name, uintptr_t address);
 
 /** @see #sseh_map_hook() */
 
-typedef void (SSEH_CCONV* sseh_map_hook_t) (const char*, uintptr_t);
+typedef int (SSEH_CCONV* sseh_map_hook_t) (const char*, uintptr_t);
 
 /**
  * Search for function name, optionally in given module.
@@ -229,7 +229,7 @@ sseh_find_address (const char* module, const char* name, uintptr_t* address);
 
 /** @see #sseh_find_address() */
 
-typedef void (SSEH_CCONV* sseh_find_address_t)
+typedef int (SSEH_CCONV* sseh_find_address_t)
     (const char*, const char*, uintptr_t*);
 
 /******************************************************************************/
@@ -243,28 +243,30 @@ typedef void (SSEH_CCONV* sseh_find_address_t)
  * denote that for this address there is no mapping done yet.
  * @param[out] name of the hook, a null-terminated string. It can be a nullptr,
  * so that only the @param size can be fetched to pre-allocate a buffer.
+ * @returns non-zero on finding a hook with such address, zero otherwise.
  */
 
-SSEH_API void SSEH_CCONV
+SSEH_API int SSEH_CCONV
 sseh_hook_name (uintptr_t address, size_t* size, char* name);
 
 /** @see #sseh_hook_name() */
 
-typedef void (SSEH_CCONV* sseh_hook_name_t) (uintptr_t, size_t*, char*);
+typedef int (SSEH_CCONV* sseh_hook_name_t) (uintptr_t, size_t*, char*);
 
 /**
  * Report address associated with given name.
  *
  * @param[in] name of the function to report the address for
  * @param[out] address associated, or zero if such name does not exist
+ * @returns non-zero on finding a hook with such name, zero otherwise.
  */
 
-SSEH_API void SSEH_CCONV
+SSEH_API int SSEH_CCONV
 sseh_hook_address (const char* name, uintptr_t* address);
 
 /** @see #sseh_hook_address() */
 
-typedef void (SSEH_CCONV* sseh_hook_address_t) (const char*, uintptr_t*);
+typedef int (SSEH_CCONV* sseh_hook_address_t) (const char*, uintptr_t*);
 
 /**
  * Reports whether the given hook is enabled or not.
@@ -274,14 +276,15 @@ typedef void (SSEH_CCONV* sseh_hook_address_t) (const char*, uintptr_t*);
  *
  * @param[in] name of the hook to get status for
  * @param[out] enabled flag, zero is not enabled, non-zero is enabled/active.
+ * @returns non-zero on finding a hook with such name, zero otherwise.
  */
 
-SSEH_API void SSEH_CCONV
+SSEH_API int SSEH_CCONV
 sseh_hook_status (const char* name, int* enabled);
 
 /** @see #sseh_hook_status() */
 
-typedef void (SSEH_CCONV* sseh_hook_status_t) (const char*, int*);
+typedef int (SSEH_CCONV* sseh_hook_status_t) (const char*, int*);
 
 /******************************************************************************/
 
@@ -305,7 +308,7 @@ sseh_detour (const char* name, uintptr_t address, uintptr_t* original);
 
 /** @see #sseh_detour() */
 
-typedef void (SSEH_CCONV* sseh_detour_t) (const char*, uintptr_t, uintptr_t*);
+typedef int (SSEH_CCONV* sseh_detour_t) (const char*, uintptr_t, uintptr_t*);
 
 /******************************************************************************/
 
@@ -323,7 +326,7 @@ sseh_enable_hooks ();
 
 /** @see #sseh_enable_hooks() */
 
-typedef void (SSEH_CCONV* sseh_enable_hooks_t) ();
+typedef int (SSEH_CCONV* sseh_enable_hooks_t) ();
 
 /**
  * Remove, restore back all hooks previously made.
@@ -339,7 +342,7 @@ sseh_disable_hooks ();
 
 /** @see #sseh_disable_hooks() */
 
-typedef void (SSEH_CCONV* sseh_disable_hooks_t) ();
+typedef int (SSEH_CCONV* sseh_disable_hooks_t) ();
 
 /******************************************************************************/
 
@@ -351,14 +354,15 @@ typedef void (SSEH_CCONV* sseh_disable_hooks_t) ();
  *
  * @param[in] command identifier
  * @param[in,out] arg to pass in or out data
+ * @returns non-zero on success, otherwise see #sseh_last_error ()
  */
 
-SSEH_API void SSEH_CCONV
+SSEH_API int SSEH_CCONV
 sseh_execute (const char* command, void* arg);
 
 /** @see #sseh_execute() */
 
-typedef void (SSEH_CCONV* sseh_execute_t) ();
+typedef int (SSEH_CCONV* sseh_execute_t) (const char*, void*);
 
 /******************************************************************************/
 

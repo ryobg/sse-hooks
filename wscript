@@ -58,7 +58,8 @@ def configure(conf):
         conf.check_cxx (msg="Checking for '-std=c++14'", cxxflags='-std=c++14') 
         conf.env.append_unique('CXXFLAGS', \
                 ['-std=c++14', "-O2", "-Wall", "-D_UNICODE", "-DUNICODE"])
-        conf.env.append_unique('LDFLAGS', ['-lpthread'])
+        conf.env.append_unique ('STLIB', ['stdc++', 'pthread'])
+        conf.env.append_unique ('LINKFLAGS', ['-static-libgcc', '-static-libstdc++'])
     elif conf.env['CXX_NAME'] is 'msvc':
         conf.env.append_unique('CXXFLAGS', ['/EHsc', '/MT', '/O2'])
 
@@ -70,7 +71,7 @@ def build (bld):
     bld.shlib (
         target   = APPNAME, 
         source   = bld.path.ant_glob ("src/*.cpp", excl=["src/test_*.cpp"]), 
-        includes = ['src', 'include', 'share/minhook/include'],
+        includes = ['src', 'include', 'share/minhook/include', 'share'],
         cxxflags = '-DSSEH_BUILD_API',
         use      = "minhook")
     for src in bld.path.ant_glob ("src/test_*.cpp"):

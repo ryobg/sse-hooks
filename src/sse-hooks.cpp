@@ -305,6 +305,22 @@ sseh_find_address (const char* module, const char* name, uintptr_t* address)
 
 //--------------------------------------------------------------------------------------------------
 
+SSEH_API void SSEH_CCONV
+sseh_enum_hooks (size_t* size, uintptr_t* addresses)
+{
+    std::shared_lock<std::shared_timed_mutex> lock (hooks_mutex);
+
+    if (addresses)
+        for (size_t i = 0, n = std::min (*size, hooks.size ()); i < n; ++i)
+        {
+             *addresses++ = hooks[i].target;
+        }
+
+    *size = hooks.size ();
+}
+
+//--------------------------------------------------------------------------------------------------
+
 SSEH_API int SSEH_CCONV
 sseh_hook_name (uintptr_t address, size_t* size, char* name)
 {
@@ -410,6 +426,33 @@ sseh_detour (const char* name, uintptr_t address, uintptr_t* original)
 //--------------------------------------------------------------------------------------------------
 
 SSEH_API int SSEH_CCONV
+sseh_enum_detours (const char* name, size_t* size, uintptr_t* detours, uintptr_t* originals)
+{
+    sseh_error.clear ();
+    std::shared_lock<std::shared_timed_mutex> lock (hooks_mutex);
+
+    auto it = hook_names.find (name);
+    if (it == hook_names.end ())
+    {
+        sseh_error = __func__ + " hook name not found"s;
+        return false;
+    }
+
+    auto const& h = hooks.at (it->second);
+    if (detours || originals)
+        for (size_t i = 0, n = std::min (*size, h.patches.size ()); i < n; ++i)
+        {
+            if (detours) *detours++ = h.patches[i].detour;
+            if (originals) *originals++ = h.patches[i].original;
+        }
+    *size = h.patches.size ();
+
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
 sseh_enable_hooks (int apply)
 {
     std::lock_guard<std::shared_timed_mutex> lock (hooks_mutex);
@@ -455,7 +498,7 @@ sseh_enable_hooks (int apply)
 SSEH_API int SSEH_CCONV
 sseh_execute (const char* command, void* arg)
 {
-    return true;
+    return false;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -471,10 +514,12 @@ sseh_make_api ()
 	api.uninit        = sseh_uninit;
 	api.map_hook      = sseh_map_hook;
 	api.find_address  = sseh_find_address;
+	api.enum_hooks    = sseh_enum_hooks;
 	api.hook_name     = sseh_hook_name;
 	api.hook_address  = sseh_hook_address;
 	api.hook_status   = sseh_hook_status;
 	api.detour        = sseh_detour;
+	api.enum_detours  = sseh_enum_detours;
 	api.enable_hooks  = sseh_enable_hooks;
 	api.execute       = sseh_execute;
     return api;

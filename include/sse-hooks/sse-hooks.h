@@ -235,6 +235,21 @@ typedef int (SSEH_CCONV* sseh_find_address_t)
 /******************************************************************************/
 
 /**
+ * Enumerate all hook targets.
+ *
+ * @param[in,out] size of the incoming array, on exit, how many elements were
+ * overwiritten or how much are needed.
+ * @param[ou] addresses (optional) which the hooks target
+ */
+
+SSEH_API void SSEH_CCONV
+sseh_enum_hooks (size_t* size, uintptr_t* addresses);
+
+/** @see #sseh_enum_hooks() */
+
+typedef void (SSEH_CCONV* sseh_enum_hooks_t) (size_t*, uintptr_t*);
+
+/**
  * Report hook name for given target address.
  *
  * @param[in] address of the target to report for
@@ -314,6 +329,30 @@ sseh_detour (const char* name, uintptr_t address, uintptr_t* original);
 
 typedef int (SSEH_CCONV* sseh_detour_t) (const char*, uintptr_t, uintptr_t*);
 
+/**
+ * Report the detours submitted for given hook.
+ *
+ * As SSEH allows overpatching the same address, this function reports the
+ * queue of patches submitted for that hook.
+ *
+ * @param[in] name of the hook
+ * @param[in,out] size of @param detours and @param originals, on exit how
+ * much were overwirtten, or how much are needed.
+ * @param[out] detours (optional) where is the patch pointing to now.
+ * @param[out] originals (optional) addresses of previous overwrites or
+ * the original itself (for the first patch).
+ * @returns non-zero on success, otherwise see #sseh_last_error ()
+ */
+
+SSEH_API int SSEH_CCONV
+sseh_enum_detours (
+    const char* name, size_t* size, uintptr_t* detours, uintptr_t* originals);
+
+/** @see #sseh_enum_detours() */
+
+typedef int (SSEH_CCONV* sseh_enum_detours_t)
+    (const char*, size_t*, uintptr_t*, uintptr_t*);
+
 /******************************************************************************/
 
 /**
@@ -373,6 +412,8 @@ struct sseh_api_v1
 	sseh_map_hook_t map_hook;
 	/** @see #sseh_find_address() */
 	sseh_find_address_t find_address;
+    /** @see #sseh_enum_hooks() */
+    sseh_enum_hooks_t enum_hooks;
 	/** @see #sseh_hook_name() */
 	sseh_hook_name_t hook_name;
 	/** @see #sseh_hook_address() */
@@ -381,6 +422,8 @@ struct sseh_api_v1
 	sseh_hook_status_t hook_status;
 	/** @see #sseh_detour() */
 	sseh_detour_t detour;
+	/** @see #sseh_enum_detours() */
+	sseh_enum_detours_t enum_detours;
 	/** @see #sseh_enable_hooks() */
 	sseh_enable_hooks_t enable_hooks;
 	/** @see #sseh_execute() */

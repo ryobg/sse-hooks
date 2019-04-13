@@ -733,7 +733,7 @@ MH_STATUS WINAPI MH_DisableHook(LPVOID pTarget)
 }
 
 //-------------------------------------------------------------------------
-static MH_STATUS QueueHook(LPVOID pTarget, BOOL queueEnable)
+MH_STATUS WINAPI MH_QueueHook(LPVOID pTarget, BOOL queueEnable)
 {
     MH_STATUS status = MH_OK;
 
@@ -773,17 +773,17 @@ static MH_STATUS QueueHook(LPVOID pTarget, BOOL queueEnable)
 //-------------------------------------------------------------------------
 MH_STATUS WINAPI MH_QueueEnableHook(LPVOID pTarget)
 {
-    return QueueHook(pTarget, TRUE);
+    return MH_QueueHook(pTarget, TRUE);
 }
 
 //-------------------------------------------------------------------------
 MH_STATUS WINAPI MH_QueueDisableHook(LPVOID pTarget)
 {
-    return QueueHook(pTarget, FALSE);
+    return MH_QueueHook(pTarget, FALSE);
 }
 
 //-------------------------------------------------------------------------
-MH_STATUS WINAPI MH_ApplyQueued(VOID)
+MH_STATUS WINAPI MH_ApplyQueued(std::function<void(LPVOID,MH_STATUS)> log)
 {
     MH_STATUS status = MH_OK;
     UINT i, first = INVALID_HOOK_POS;
@@ -812,6 +812,7 @@ MH_STATUS WINAPI MH_ApplyQueued(VOID)
                 if (pHook->isEnabled != pHook->queueEnable)
                 {
                     status = EnableHookLL(i, pHook->queueEnable);
+                    log (pHook->pTarget, status);
                     if (status != MH_OK)
                         break;
                 }

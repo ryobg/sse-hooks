@@ -23,7 +23,7 @@
  * @ingroup Public API
  *
  * @note This API is thread-safe.
- * @note Unless mentioned otherwise, all strings are in UTF-8 encoding.
+ * @note Unless mentioned, all strings are null-terminated and in UTF-8.
  *
  * @details
  * This file encompass all the functions which are presented to the users of
@@ -275,16 +275,20 @@ typedef int (SSEH_CCONV* sseh_hook_address_t) (const char*, uintptr_t*);
  * a call to #sseh_enable_hooks() will report zero (aka false).
  *
  * @param[in] name of the hook to get status for
- * @param[out] enabled flag, zero is not enabled, non-zero is enabled/active.
+ * @param[out] applied (optional), zero is not applied (or yet to be applied).
+ * @param[in,out] size (optional) of the incoming @param status, on exit, how
+ * many bytes is, or must be, the actual size.
+ * @param[out] status (optional) an error reported for this hook
  * @returns non-zero on finding a hook with such name, zero otherwise.
  */
 
 SSEH_API int SSEH_CCONV
-sseh_hook_status (const char* name, int* enabled);
+sseh_hook_status (const char* name, int* applied, size_t* size, char* status);
 
 /** @see #sseh_hook_status() */
 
-typedef int (SSEH_CCONV* sseh_hook_status_t) (const char*, int*);
+typedef int (SSEH_CCONV* sseh_hook_status_t)
+    (const char*, int*, size_t*, char*);
 
 /******************************************************************************/
 
@@ -313,36 +317,21 @@ typedef int (SSEH_CCONV* sseh_detour_t) (const char*, uintptr_t, uintptr_t*);
 /******************************************************************************/
 
 /**
- * Apply all detours.
+ * Apply all detours or remove, restore back all hooks previously made.
  *
  * This function should not be called explicitly in SKSE/SSE environment. The
  * plugin itself takes care when to enable all hooks and when to disable them.
  *
+ * @param[in] apply the hooks if non-zero, or disable them - zero
  * @returns non-zero on success, otherwise see #sseh_last_error ()
  */
 
 SSEH_API int SSEH_CCONV
-sseh_enable_hooks ();
+sseh_enable_hooks (int apply);
 
 /** @see #sseh_enable_hooks() */
 
-typedef int (SSEH_CCONV* sseh_enable_hooks_t) ();
-
-/**
- * Remove, restore back all hooks previously made.
- *
- * This function should not be called explicitly in SKSE/SSE environment. The
- * plugin itself takes care when to enable all hooks and when to disable them.
- *
- * @returns non-zero on success, otherwise see #sseh_last_error ()
- */
-
-SSEH_API int SSEH_CCONV
-sseh_disable_hooks ();
-
-/** @see #sseh_disable_hooks() */
-
-typedef int (SSEH_CCONV* sseh_disable_hooks_t) ();
+typedef int (SSEH_CCONV* sseh_enable_hooks_t) (int);
 
 /******************************************************************************/
 
@@ -394,8 +383,6 @@ struct sseh_api_v1
 	sseh_detour_t detour;
 	/** @see #sseh_enable_hooks() */
 	sseh_enable_hooks_t enable_hooks;
-	/** @see #sseh_disable_hooks() */
-	sseh_disable_hooks_t disable_hooks;
 	/** @see #sseh_execute() */
 	sseh_execute_t execute;
 };

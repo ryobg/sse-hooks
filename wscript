@@ -70,7 +70,7 @@ def build (bld):
     bld.shlib (
         target   = APPNAME, 
         source   = bld.path.ant_glob ("src/*.cpp", excl=["src/test_*.cpp"]), 
-        includes = ['src', 'include'],
+        includes = ['src', 'include', 'share/minhook/include'],
         cxxflags = '-DSSEH_BUILD_API',
         use      = "minhook")
     for src in bld.path.ant_glob ("src/test_*.cpp"):

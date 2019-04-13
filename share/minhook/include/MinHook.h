@@ -33,6 +33,7 @@
 #endif
 
 #include <windows.h>
+#include <functional>
 
 // MinHook Error Codes.
 typedef enum MH_STATUS
@@ -160,6 +161,8 @@ extern "C" {
     //                disabled in one go.
     MH_STATUS WINAPI MH_DisableHook(LPVOID pTarget);
 
+    MH_STATUS WINAPI MH_QueueHook(LPVOID pTarget, BOOL queueEnable); //FIXME:
+
     // Queues to enable an already created hook.
     // Parameters:
     //   pTarget [in] A pointer to the target function.
@@ -175,7 +178,7 @@ extern "C" {
     MH_STATUS WINAPI MH_QueueDisableHook(LPVOID pTarget);
 
     // Applies all queued changes in one go.
-    MH_STATUS WINAPI MH_ApplyQueued(VOID);
+    MH_STATUS WINAPI MH_ApplyQueued(std::function<void(LPVOID,MH_STATUS)>); //FIXME:
 
     // Translates the MH_STATUS to its name as a string.
     const char * WINAPI MH_StatusToString(MH_STATUS status);

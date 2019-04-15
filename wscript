@@ -72,9 +72,25 @@ def build (bld):
         target   = APPNAME, 
         source   = bld.path.ant_glob ("src/*.cpp", excl=["src/test_*.cpp"]), 
         includes = ['src', 'include', 'share/minhook/include', 'share'],
-        cxxflags = '-DSSEH_BUILD_API',
+        cxxflags = ['-DSSEH_BUILD_API', '-DSSEH_TIMESTAMP="'+str(_datetime_now())+'"'],
         use      = "minhook")
     for src in bld.path.ant_glob ("src/test_*.cpp"):
         f = os.path.basename (str (src))
         f = os.path.splitext (f)[0]
         bld.program (target=f, source=[src], includes='include', use=APPNAME)
+
+#---------------------------------------------------------------------------------------------------
+
+def _datetime_now ():
+    from datetime import datetime, timedelta, tzinfo
+    """ Python 3.2 and less miss timezones."""
+    class UTC (tzinfo):
+        def utcoffset (self, dt):
+            return timedelta (0)
+        def tzname (self, dt):
+            return "UTC"
+        def dst (self, dt):
+            return timedelta (0)
+    return datetime.now (UTC ()).isoformat ()
+
+#---------------------------------------------------------------------------------------------------

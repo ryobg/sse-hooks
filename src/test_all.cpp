@@ -34,14 +34,15 @@
 bool test_sseh_version ()
 {
     int a, m, i;
-    sseh_version (nullptr, nullptr, nullptr);
-    sseh_version (&a, nullptr, nullptr);
-    sseh_version (&a, &m, nullptr);
-    sseh_version (&a, &a, &a);
-    sseh_version (nullptr, &m, &m);
-    a = m = i = -1;
-    sseh_version (&a, &m, &i);
-    return a >= 0 && m >= 0 && i >= 0;
+    const char* b;
+    sseh_version (nullptr, nullptr, nullptr, nullptr);
+    sseh_version (&a, nullptr, nullptr, nullptr);
+    sseh_version (&a, &m, nullptr, nullptr);
+    sseh_version (&a, &a, &a, nullptr);
+    sseh_version (nullptr, &m, &m, &b);
+    a = m = i = -1; b = nullptr;
+    sseh_version (&a, &m, &i, &b);
+    return a >= 0 && m >= 0 && i >= 0 && b;
 }
 
 //--------------------------------------------------------------------------------------------------

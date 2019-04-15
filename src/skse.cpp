@@ -184,7 +184,7 @@ void handle_skse_message (SKSEMessagingInterface::Message* m)
     log () << "All mods reported as loaded." << std::endl;
 
     int api;
-    sseh_version (&api, nullptr, nullptr);
+    sseh_version (&api, nullptr, nullptr, nullptr);
     auto data = sseh_make_api ();
     messages->Dispatch (plugin, UInt32 (api), &data, sizeof (data), nullptr);
 
@@ -211,7 +211,7 @@ extern "C" SSEH_API bool SSEH_CCONV
 SKSEPlugin_Query (SKSEInterface const* skse, PluginInfo* info)
 {
     int api;
-    sseh_version (&api, nullptr, nullptr);
+    sseh_version (&api, nullptr, nullptr, nullptr);
 
     info->infoVersion = PluginInfo::kInfoVersion;
     info->name = "SSEH";
@@ -241,8 +241,9 @@ SKSEPlugin_Load (SKSEInterface const* skse)
     messages->RegisterListener (plugin, "SKSE", handle_skse_message);
 
     int a, m, p;
-    sseh_version (&a, &m, &p);
-    log () << "SSEH "<< a <<'.'<< m <<'.'<< p << std::endl;
+    const char* b;
+    sseh_version (&a, &m, &p, &b);
+    log () << "SSEH "<< a <<'.'<< m <<'.'<< p <<" ("<< b <<')' << std::endl;
 
     int r = sseh_init ();
 

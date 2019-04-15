@@ -112,17 +112,18 @@ extern "C" {
  * interest. It is reserved for patches, bug fixes, maybe documentation updates
  * re-release of something and etc. It is used mostly as kind of timestamp.
  *
- * @param[out] api (optional) version
- * @param[out] maj (optional) version
- * @param[out] imp (optional) version
+ * @param[out] api (optional) non-portable
+ * @param[out] maj (optional) new features and enhancements
+ * @param[out] imp (optional) patches
+ * @param[out] build (optional) ISO timestamp
  */
 
 SSEH_API void SSEH_CCONV
-sseh_version (int* api, int* maj, int* imp);
+sseh_version (int* api, int* maj, int* imp, const char** timestamp);
 
 /** @see #sseh_version() */
 
-typedef void (SSEH_CCONV* sseh_version_t) (int*, int*, int*);
+typedef void (SSEH_CCONV* sseh_version_t) (int*, int*, int*, const char**);
 
 /******************************************************************************/
 

@@ -169,7 +169,7 @@ call_minhook (Function&& func, Args&&... args)
 //--------------------------------------------------------------------------------------------------
 
 SSEH_API void SSEH_CCONV
-sseh_version (int* api, int* maj, int* imp)
+sseh_version (int* api, int* maj, int* imp, const char** build)
 {
     constexpr std::array<int, 3> ver = {
 #include "../VERSION"
@@ -177,6 +177,7 @@ sseh_version (int* api, int* maj, int* imp)
     if (api) *api = ver[0];
     if (maj) *maj = ver[1];
     if (imp) *imp = ver[2];
+    if (build) *build = SSEH_TIMESTAMP; //"2019-04-15T08:37:11.419416+00:00"
 }
 
 //--------------------------------------------------------------------------------------------------

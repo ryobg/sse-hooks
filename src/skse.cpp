@@ -37,7 +37,7 @@ typedef std::uint64_t UInt64;
 #include <skse/PluginAPI.h>
 
 #include <vector>
-#include <ctime>
+#include <chrono>
 #include <fstream>
 #include <iomanip>
 
@@ -50,7 +50,7 @@ PluginHandle plugin = 0;
 SKSEMessagingInterface* messages = nullptr;
 
 /// Log file in pre-defined location
-static std::ofstream log;
+static std::ofstream logfile;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -58,21 +58,43 @@ static std::ofstream log;
 
 static void open_log ()
 {
-    log.open ("sseh.log");
+    logfile.open ("sseh.log");
 }
 
 //--------------------------------------------------------------------------------------------------
 
-/// Small helper function to get the last error and log it (if stream is opened).
+static decltype(logfile)&
+log ()
+{
+    // MinGW 4.9.1 have no std::put_time()
+	using std::chrono::system_clock;
+	auto now_c = system_clock::to_time_t (system_clock::now ());
+	auto loc_c = std::localtime (&now_c);
+    logfile << '['
+            << 1900 + loc_c->tm_year
+            << '-' << std::setw (2) << std::setfill ('0') << loc_c->tm_mon
+            << '-' << std::setw (2) << std::setfill ('0') << loc_c->tm_mday
+            << ' ' << std::setw (2) << std::setfill ('0') << loc_c->tm_hour
+            << ':' << std::setw (2) << std::setfill ('0') << loc_c->tm_min
+        << "] ";
+    return logfile;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+/// Frequent scenario to get the last error and log it
 
 static void
 log_error ()
 {
     size_t n = 0;
     sseh_last_error (&n, nullptr);
-    std::string s (n+1, '\0');
-    sseh_last_error (&n, &s[0]);
-    log << s << std::endl;
+    if (n)
+    {
+        std::string s (n+1, '\0');
+        sseh_last_error (&n, &s[0]);
+        log () << s << std::endl;
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -88,7 +110,7 @@ log_hooks ()
     if (!n)
         return;
 
-    log << "Dumping " << n << " hooks... " << std::endl;
+    log () << "Dumping " << n << " hooks... " << std::endl;
 
     std::vector<std::uintptr_t> addresses (n);
     sseh_enum_hooks (&n, addresses.data ());
@@ -141,14 +163,14 @@ log_hooks ()
             continue;
         }
 
-        log <<  "Name: " << name
+        log () <<  "Name: " << name
             << " Addr: " << std::hex << addr << std::dec
             << " Appl: " << bool (applied)
             << " Stat: " << status
             << " Patches (" << n << "): ";
         for (size_t i = 0; i < n; ++i)
-            log << std::hex << "0x" << originals[i] << " -> 0x" << detours[i];
-        log << std::endl;
+            log () << std::hex << "0x" << originals[i] << " -> 0x" << detours[i];
+        log () << std::endl;
     }
 }
 
@@ -159,14 +181,14 @@ void handle_skse_message (SKSEMessagingInterface::Message* m)
     if (!m || m->type != SKSEMessagingInterface::kMessage_PostLoad)
         return;
 
-    log << "All mods reported as loaded." << std::endl;
+    log () << "All mods reported as loaded." << std::endl;
 
     int api;
     sseh_version (&api, nullptr, nullptr);
     auto data = sseh_make_api ();
     messages->Dispatch (plugin, UInt32 (api), &data, sizeof (data), nullptr);
 
-    log << "SSEH interface broadcasted." << std::endl;
+    log () << "SSEH interface broadcasted." << std::endl;
     log_hooks ();
 
     if (!sseh_enable_hooks (true))
@@ -175,10 +197,10 @@ void handle_skse_message (SKSEMessagingInterface::Message* m)
     {
         std::size_t n = 0;
         sseh_enum_hooks (&n, nullptr);
-        log << n << " hooks applied." << std::endl;
+        log () << n << " hooks applied." << std::endl;
     }
     log_hooks ();
-    log << "All done." << std::endl;
+    log () << "All done." << std::endl;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -220,15 +242,11 @@ SKSEPlugin_Load (SKSEInterface const* skse)
 
     int a, m, p;
     sseh_version (&a, &m, &p);
-    log << "SSEH "<< a <<'.'<< m <<'.'<< p << std::endl;
+    log () << "SSEH "<< a <<'.'<< m <<'.'<< p << std::endl;
 
-    std::time_t t = std::time (nullptr);
-    std::tm tm = *std::localtime (&t);
-    log << std::put_time (&tm, "%Y-%m-%d %H:%M:%S") << std::endl;
+    int r = sseh_init ();
 
-    bool r = (0 != sseh_init ());
-
-    if (r) log << "Initialized." << std::endl;
+    if (r) log () << "Initialized." << std::endl;
     else log_error ();
 
     return r;

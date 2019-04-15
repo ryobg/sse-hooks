@@ -28,12 +28,12 @@
 
 #include <sse-hooks/sse-hooks.h>
 
+#include <cstring>
 #include <string>
 #include <array>
 #include <map>
 #include <vector>
 #include <locale>
-#include <codecvt>
 #include <algorithm>
 #include <shared_mutex>
 
@@ -86,10 +86,7 @@ static std::shared_timed_mutex hooks_mutex;
 
 //--------------------------------------------------------------------------------------------------
 
-typedef std::wstring_convert<std::codecvt_utf8_utf16<TCHAR>, TCHAR>
-	convert_utf8_tchar;
-
-static_assert (std::is_same<std::wstring::value_type, TCHAR>::value, "Not a _UNICODE build.");
+static_assert (std::is_same<std::wstring::value_type, TCHAR>::value, "Not an _UNICODE build.");
 
 /// Safe convert from UTF-8 (Skyrim) encoding to UTF-16 (Windows).
 
@@ -97,13 +94,13 @@ static bool
 utf8_to_utf16 (char const* bytes, std::wstring& out)
 {
     sseh_error.clear ();
-    if (bytes) try {
-        out = convert_utf8_tchar ().from_bytes (bytes);
-    }
-    catch (std::exception const& ex) {
-        sseh_error = ex.what ();
-        return false;
-    }
+    if (!bytes) return true;
+    int bytes_size = static_cast<int> (std::strlen (bytes));
+    if (bytes_size < 1) return true;
+    int sz = ::MultiByteToWideChar (CP_UTF8, 0, bytes, bytes_size, NULL, 0);
+    if (sz < 1) return false;
+    std::wstring ws (sz, 0);
+    ::MultiByteToWideChar (CP_UTF8, 0, bytes, bytes_size, &ws[0], sz);
     return true;
 }
 
@@ -112,13 +109,14 @@ utf8_to_utf16 (char const* bytes, std::wstring& out)
 static bool
 utf16_to_utf8 (wchar_t const* wide, std::string& out)
 {
-    if (wide) try {
-        out = convert_utf8_tchar ().to_bytes (wide);
-    }
-    catch (std::exception const& ex) {
-        sseh_error = ex.what ();
-        return false;
-    }
+    sseh_error.clear ();
+    if (!wide) return true;
+    int wide_size = static_cast<int> (std::wcslen (wide));
+    if (wide_size < 1) return true;
+    int sz = ::WideCharToMultiByte (CP_UTF8, 0, wide, wide_size, NULL, 0, NULL, NULL);
+    if (sz < 1) return false;
+    std::string s (sz, 0);
+    ::WideCharToMultiByte (CP_UTF8, 0, wide, wide_size, &s[0], sz, NULL, NULL);
     return true;
 }
 

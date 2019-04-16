@@ -102,76 +102,8 @@ log_error ()
 /// Small helper function to get the last error and log it (if stream is opened).
 
 static void
-log_hooks ()
+log_config ()
 {
-    std::size_t n = 0;
-    sseh_enum_hooks (&n, nullptr);
-
-    if (!n)
-        return;
-
-    log () << "Dumping " << n << " hooks... " << std::endl;
-
-    std::vector<std::uintptr_t> addresses (n);
-    sseh_enum_hooks (&n, addresses.data ());
-
-    std::vector<std::uintptr_t> detours, originals;
-    std::string name, status;
-    for (auto addr: addresses)
-    {
-        n = 0;
-        if (!sseh_hook_name (addr, &n, nullptr))
-        {
-            log_error ();
-            continue;
-        }
-
-        name.resize (++n, '\0');
-        if (!sseh_hook_name (addr, &n, &name[0]))
-        {
-            log_error ();
-            continue;
-        }
-
-        n = 0;
-        if (!sseh_hook_status (name.c_str (), nullptr, &n, nullptr))
-        {
-            log_error ();
-            continue;
-        }
-
-        int applied = 0;
-        status.resize (++n, '\0');
-        if (!sseh_hook_status (name.c_str (), &applied, &n, &status[0]))
-        {
-            log_error ();
-            continue;
-        }
-
-        n = 0;
-        if (!sseh_enum_detours (name.c_str (), &n, nullptr, nullptr))
-        {
-            log_error ();
-            continue;
-        }
-
-        detours.resize (n);
-        originals.resize (n);
-        if (!sseh_enum_detours (name.c_str (), &n, detours.data (), originals.data ()))
-        {
-            log_error ();
-            continue;
-        }
-
-        log () <<  "Name: " << name
-            << " Addr: " << std::hex << addr << std::dec
-            << " Appl: " << bool (applied)
-            << " Stat: " << status
-            << " Patches (" << n << "): ";
-        for (size_t i = 0; i < n; ++i)
-            log () << std::hex << "0x" << originals[i] << " -> 0x" << detours[i];
-        log () << std::endl;
-    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -189,17 +121,13 @@ void handle_skse_message (SKSEMessagingInterface::Message* m)
     messages->Dispatch (plugin, UInt32 (api), &data, sizeof (data), nullptr);
 
     log () << "SSEH interface broadcasted." << std::endl;
-    log_hooks ();
+    log_config ();
 
-    if (!sseh_enable_hooks (true))
+    if (!sseh_apply ())
         log_error ();
     else
-    {
-        std::size_t n = 0;
-        sseh_enum_hooks (&n, nullptr);
-        log () << n << " hooks applied." << std::endl;
-    }
-    log_hooks ();
+        log () << "Applied." << std::endl;
+    log_config ();
     log () << "All done." << std::endl;
 }
 

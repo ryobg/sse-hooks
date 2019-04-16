@@ -40,6 +40,7 @@
 #include <windows.h>
 
 #include <MinHook.h>
+#include <nlohmann/json.hpp>
 
 //--------------------------------------------------------------------------------------------------
 
@@ -53,7 +54,7 @@ static thread_local std::string sseh_error;
 /// Describes a patched function as used by SSEH
 struct hook
 {
-    /// Are the patches applied?
+    /// Is this hook applied/enabled?
     bool applied;
     /// A (error mostly) status in human-readable form
     std::string status;
@@ -168,6 +169,26 @@ call_minhook (Function&& func, Args&&... args)
 
 //--------------------------------------------------------------------------------------------------
 
+static void
+validate_config (std::string const& str)
+{
+    sseh_error.clear ();
+    try
+    {
+        auto json = nlohmann::json::parse (str);
+        for (auto const& h: json["hooks"])
+        {
+            h.is_array ();
+        }
+    }
+    catch (std::exception const& ex)
+    {
+        sseh_error = __func__ + " "s + ex.what ();
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
 SSEH_API void SSEH_CCONV
 sseh_version (int* api, int* maj, int* imp, const char** build)
 {
@@ -243,39 +264,6 @@ sseh_uninit ()
 //--------------------------------------------------------------------------------------------------
 
 SSEH_API int SSEH_CCONV
-sseh_map_hook (const char* name, uintptr_t address)
-{
-    sseh_error.clear ();
-    std::lock_guard<std::shared_timed_mutex> lock (hooks_mutex);
-
-    if (hook_names.count (name))
-    {
-        sseh_error = __func__ + " name already exists"s;
-        return false;
-    }
-
-    if (hook_addresses.count (address))
-    {
-        sseh_error = __func__ + " address already exists"s;
-        return false;
-    }
-
-    hook h    = {};
-    h.applied = false;
-    h.status  = "no detour";
-    h.name    = name;
-    h.target  = address;
-
-    hooks.push_back (h);
-    hook_names[name] = hooks.size () - 1;
-    hook_addresses[address] = hooks.size () - 1;
-
-    return true;
-}
-
-//--------------------------------------------------------------------------------------------------
-
-SSEH_API int SSEH_CCONV
 sseh_find_address (const char* module, const char* name, uintptr_t* address)
 {
     HMODULE h;
@@ -304,77 +292,26 @@ sseh_find_address (const char* module, const char* name, uintptr_t* address)
 
 //--------------------------------------------------------------------------------------------------
 
-SSEH_API void SSEH_CCONV
-sseh_enum_hooks (size_t* size, uintptr_t* addresses)
+SSEH_API int SSEH_CCONV
+sseh_load (const char* filepath)
 {
-    std::shared_lock<std::shared_timed_mutex> lock (hooks_mutex);
-
-    if (addresses)
-        for (size_t i = 0, n = std::min (*size, hooks.size ()); i < n; ++i)
-        {
-             *addresses++ = hooks[i].target;
-        }
-
-    *size = hooks.size ();
+    return false;
 }
 
 //--------------------------------------------------------------------------------------------------
 
 SSEH_API int SSEH_CCONV
-sseh_hook_name (uintptr_t address, size_t* size, char* name)
+sseh_identify (const char* pointer, size_t* size, char* json)
 {
-    sseh_error.clear ();
-    std::shared_lock<std::shared_timed_mutex> lock (hooks_mutex);
-
-    auto it = hook_addresses.find (address);
-    if (it == hook_addresses.end ())
-    {
-        sseh_error = __func__ + " hook address not found"s;
-        return false;
-    }
-
-    copy_string (hooks.at (it->second).name, size, name);
-    return true;
+    return false;
 }
 
 //--------------------------------------------------------------------------------------------------
 
 SSEH_API int SSEH_CCONV
-sseh_hook_address (const char* name, uintptr_t* address)
+sseh_merge_patch (const char* json)
 {
-    sseh_error.clear ();
-    std::shared_lock<std::shared_timed_mutex> lock (hooks_mutex);
-
-    auto it = hook_names.find (name);
-    if (it == hook_names.end ())
-    {
-        sseh_error = __func__ + " hook name not found"s;
-        return false;
-    }
-
-    *address = hooks.at (it->second).target;
-    return true;
-}
-
-//--------------------------------------------------------------------------------------------------
-
-SSEH_API int SSEH_CCONV
-sseh_hook_status (const char* name, int* applied, size_t* size, char* status)
-{
-    sseh_error.clear ();
-    std::shared_lock<std::shared_timed_mutex> lock (hooks_mutex);
-
-    auto it = hook_names.find (name);
-    if (it == hook_names.end ())
-    {
-        sseh_error = __func__ + " hook name not found"s;
-        return false;
-    }
-
-    hook& h = hooks.at (it->second);
-    if (applied) *applied = h.applied;
-    if (size) copy_string (h.status, size, status);
-    return true;
+    return false;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -382,114 +319,15 @@ sseh_hook_status (const char* name, int* applied, size_t* size, char* status)
 SSEH_API int SSEH_CCONV
 sseh_detour (const char* name, uintptr_t address, uintptr_t* original)
 {
-    sseh_error.clear ();
-    std::lock_guard<std::shared_timed_mutex> lock (hooks_mutex);
-
-    auto it = hook_names.find (name);
-    if (it == hook_names.end ())
-    {
-        sseh_error = __func__ + " hook name not found"s;
-        return false;
-    }
-
-    hook& h = hooks.at (it->second);
-    for (auto const& p: h.patches)
-    {
-        if (p.detour == address)
-        {
-            sseh_error = __func__ + " detour already exists"s;
-            return false;
-        }
-    }
-
-    LPVOID trampoline;
-    auto target = reinterpret_cast<LPVOID> (h.target);
-    auto detour = reinterpret_cast<LPVOID> (address);
-
-    if (!call_minhook (MH_CreateHook, target, detour, &trampoline))
-    {
-        sseh_error = __func__ + " MH_CreateHook "s + sseh_error;
-        h.status = sseh_error;
-        return false;
-    }
-
-    hook::patch p;
-    p.detour = address;
-    p.original = reinterpret_cast<uintptr_t> (trampoline);
-    h.patches.push_back (p);
-    h.status = "detoured";
-
-    return true;
+    return false;
 }
 
 //--------------------------------------------------------------------------------------------------
 
 SSEH_API int SSEH_CCONV
-sseh_enum_detours (const char* name, size_t* size, uintptr_t* detours, uintptr_t* originals)
+sseh_apply ()
 {
-    sseh_error.clear ();
-    std::shared_lock<std::shared_timed_mutex> lock (hooks_mutex);
-
-    auto it = hook_names.find (name);
-    if (it == hook_names.end ())
-    {
-        sseh_error = __func__ + " hook name not found"s;
-        return false;
-    }
-
-    auto const& h = hooks.at (it->second);
-    if (detours || originals)
-        for (size_t i = 0, n = std::min (*size, h.patches.size ()); i < n; ++i)
-        {
-            if (detours) *detours++ = h.patches[i].detour;
-            if (originals) *originals++ = h.patches[i].original;
-        }
-    *size = h.patches.size ();
-
-    return true;
-}
-
-//--------------------------------------------------------------------------------------------------
-
-SSEH_API int SSEH_CCONV
-sseh_enable_hooks (int apply)
-{
-    std::lock_guard<std::shared_timed_mutex> lock (hooks_mutex);
-
-    if (!call_minhook (MH_QueueHook, LPVOID (MH_ALL_HOOKS), BOOL (apply)))
-    {
-        sseh_error = __func__ + " MH_QueueEnableHook "s + sseh_error;
-        return false;
-    }
-
-    auto logger = [&] (LPVOID target, MH_STATUS status)
-    {
-        auto it = hook_addresses.find (reinterpret_cast<std::uintptr_t> (target));
-        if (it == hook_addresses.end ())
-        {
-            sseh_error = __func__ + " non-managed hook detected"s;
-            return;
-        }
-
-        auto& h = hooks[it->second];
-
-        if (status == MH_OK)
-        {
-            h.applied = true;
-            h.status = "applied";
-            return;
-        }
-
-        h.status = "MH_ApplyQueued "s + MH_StatusToString (status);
-    };
-
-    if (!call_minhook (MH_ApplyQueued, logger))
-    {
-        sseh_error = __func__ + " MH_QueueEnableHook "s + sseh_error;
-        return false;
-    }
-
-    return true;
+    return false;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -505,22 +343,17 @@ sseh_execute (const char* command, void* arg)
 SSEH_API sseh_api SSEH_CCONV
 sseh_make_api ()
 {
-    sseh_api api      = {};
-    api.next          = 0;
-	api.version       = sseh_version;
-	api.last_error    = sseh_last_error;
-	api.init          = sseh_init;
-	api.uninit        = sseh_uninit;
-	api.map_hook      = sseh_map_hook;
-	api.find_address  = sseh_find_address;
-	api.enum_hooks    = sseh_enum_hooks;
-	api.hook_name     = sseh_hook_name;
-	api.hook_address  = sseh_hook_address;
-	api.hook_status   = sseh_hook_status;
-	api.detour        = sseh_detour;
-	api.enum_detours  = sseh_enum_detours;
-	api.enable_hooks  = sseh_enable_hooks;
-	api.execute       = sseh_execute;
+    sseh_api api     = {};
+	api.version      = sseh_version;
+	api.last_error   = sseh_last_error;
+	api.init         = sseh_init;
+	api.uninit       = sseh_uninit;
+	api.find_address = sseh_find_address;
+	api.load         = sseh_load;
+	api.identify     = sseh_identify;
+	api.merge_patch  = sseh_merge_patch;
+	api.apply        = sseh_apply;
+	api.execute      = sseh_execute;
     return api;
 }
 

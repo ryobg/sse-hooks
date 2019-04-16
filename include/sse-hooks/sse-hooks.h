@@ -32,53 +32,15 @@
  * is compatible with C++. As the methods are to be exported in the DLL, this
  * lib interface can be also accessed from other languages too.
  *
- * An way to access the interface is to use the SKSE inter-plugin messaging
- * system. Basically, by sending a message to SSEH, in return, a pointer to the
- * API structure (see #sseh_api) will be reported. This way, on one pass, an
- * access to the full suite of methods is given. Note, however that layout of
- * the structure maybe different than what is expected, in order to get the
- * correct structure, the 'type' param should hold the requested API version.
- * This way, if the actual API is different, the user code won't break.
+ * Basic flow goes as follow:
  *
- * An example of how to send a SKSE plugin message:
- *
- * @code
- * std::string req = "sseh_api";
- * p->Dispatch (sender, api_ver = 1, &req[0], req.size (), "SSEH");
- * @endcode
- *
- * In this case, 1 is the version of the API requested. If nothing comes back,
- * then this is not supported request. `p` is of type SKSEMessagingInterface,
- * refer to the SKSE plugin API for more information how it can be obtained.
- *
- * So, an example of how to handle the SKSE plugin messages sent by SSEH:
- *
- * @code
- * void got_skse_message (Message* m)
- * {
- *      std::string func, err;
- *      if (m.sender && std::strcmp (m.sender, "SSEH") == 0)
- *      {
- *          assert (m.type == api_ver);
- *          assert (m.dataLen == sizeof (sseh_api));
- *          auto sseh = *reinterpet_cast<sseh_api*> (m.data);
- *      }
- * }
- * @endcode
- *
- * In most SKSE plugin cases, most work that they should do is just to create
- * association between some name of a function and the target which will be
- * overwitten (see #sseh_map_hook()). If other plugin already hooked on that
- * address, with the same or different name - see #sseh_hook_name() or
- * #sseh_hook_address(). If the address is not known, see #sseh_find_address().
- *
- * After the mapping was done, #sseh_detour() should be called with the actual
- * address to jump to from now on. That's all.
- *
- * When the time window for mapping and detouring passes, SSEH will enable all
- * hooks and notify all interested plugins. As there is some chance or situation
- * when certain hooks failed, others not, during that notification plugins
- * should go and check the status of their hook, see #sseh_hook_state().
+ * 1. Initialize the library #sseh_init()
+ * 2. Load a pre-defined JSON configuration file by calling #sseh_load()
+ * 3. Update the configuration as needed by calling #sseh_merge_patch()
+ * 4. Enable and apply SSEH changes upon the process memory, call #sseh_apply()
+ * 5. Fetch any fields of interest like the computed calls to the original non-
+ * patched functions by calling #sseh_identify()
+ * 6. When SSEH and its hooks are no longer needed - #sseh_uninit()
  */
 
 #ifndef SSEH_SSEHOOKS_H
@@ -153,9 +115,6 @@ typedef void (SSEH_CCONV* sseh_last_error_t) (size_t*, char*);
  * This function must be called first before any further usage (excluding
  * #sseh_version() and #sseh_last_error()).
  *
- * This function should not be called explicitly in SKSE/SSE environment. The
- * plugin takes care when to initialize itself.
- *
  * @returns non-zero on success, otherwise see #sseh_last_error ()
  */
 
@@ -168,9 +127,6 @@ typedef int (SSEH_CCONV* sseh_init_t) ();
 
 /**
  * Uninitialize (pre-init state) SSEH.
- *
- * This function should not be called explicitly in SKSE/SSE environment. The
- * plugin itself takes care when to initialize itself.
  */
 
 SSEH_API void SSEH_CCONV
@@ -181,38 +137,6 @@ sseh_uninit ();
 typedef void (SSEH_CCONV* sseh_uninit_t) ();
 
 /******************************************************************************/
-
-/**
- * Associate an unique name with target address.
- *
- * This just writes down in SSEH that this unique name for a function should
- * from now on refer to the given target (unmodified) function address.
- *
- * 1. If the same name, with the same address was mapped before, nothing is
- * changed.
- * 2. If that name, was before associated with another address, then this
- * operation fails. You can see which address is that name referring to, by
- * calling #sseh_hook_address()
- * 3. If that address is already, hooked under different name, then this
- * operation fails. You can see which name it is registered under, by calling
- * #sseh_hook_name()
- *
- * If the function address is not known, it can be searched first by name, see
- * #sseh_find_address(). After the mapping is done, notification from SSEH (
- * basically after it calls #sseh_enable_hooks()) will be sent, status of
- * each hook can be checked with #sseh_hook_status().
- *
- * @param name of the address (e.g. a function name)
- * @param address of the function to be hooked later
- * @returns non-zero on success, otherwise see #sseh_last_error ()
- */
-
-SSEH_API int SSEH_CCONV
-sseh_map_hook (const char* name, uintptr_t address);
-
-/** @see #sseh_map_hook() */
-
-typedef int (SSEH_CCONV* sseh_map_hook_t) (const char*, uintptr_t);
 
 /**
  * Search for function name, optionally in given module.
@@ -236,142 +160,85 @@ typedef int (SSEH_CCONV* sseh_find_address_t)
 /******************************************************************************/
 
 /**
- * Enumerate all hook targets.
+ * Load from file and replace the JSON configuration.
  *
- * @param[in,out] size of the incoming array, on exit, how many elements were
- * overwiritten or how much are needed.
- * @param[ou] addresses (optional) which the hooks target
- */
-
-SSEH_API void SSEH_CCONV
-sseh_enum_hooks (size_t* size, uintptr_t* addresses);
-
-/** @see #sseh_enum_hooks() */
-
-typedef void (SSEH_CCONV* sseh_enum_hooks_t) (size_t*, uintptr_t*);
-
-/**
- * Report hook name for given target address.
+ * This is a shorthand for fancy combination of reading a file and
+ * #sseh_merge_patch() calls. The configuration still needs to be applied
+ * through #sseh_apply() later.
  *
- * @param[in] address of the target to report for
- * @param[in,out] size of the the incoming @param names - in bytes, on exit how
- * many bytes the name is (trailing null byte is not counted). Can be zero to
- * denote that for this address there is no mapping done yet.
- * @param[out] name of the hook, a null-terminated string. It can be a nullptr,
- * so that only the @param size can be fetched to pre-allocate a buffer.
- * @returns non-zero on finding a hook with such address, zero otherwise.
+ * @param[in] filepath to read from
  */
 
 SSEH_API int SSEH_CCONV
-sseh_hook_name (uintptr_t address, size_t* size, char* name);
+sseh_load (const char* filepath);
 
-/** @see #sseh_hook_name() */
+/** @see #sseh_load() */
 
-typedef int (SSEH_CCONV* sseh_hook_name_t) (uintptr_t, size_t*, char*);
-
-/**
- * Report address associated with given name.
- *
- * @param[in] name of the function to report the address for
- * @param[out] address associated, or zero if such name does not exist
- * @returns non-zero on finding a hook with such name, zero otherwise.
- */
-
-SSEH_API int SSEH_CCONV
-sseh_hook_address (const char* name, uintptr_t* address);
-
-/** @see #sseh_hook_address() */
-
-typedef int (SSEH_CCONV* sseh_hook_address_t) (const char*, uintptr_t*);
-
-/**
- * Reports whether the given hook is enabled or not.
- *
- * Hooks which does not exist, or were not successfull, or are still pending for
- * a call to #sseh_enable_hooks() will report zero (aka false).
- *
- * @param[in] name of the hook to get status for
- * @param[out] applied (optional), zero is not applied (or yet to be applied).
- * @param[in,out] size (optional) of the incoming @param status, on exit, how
- * many bytes is, or must be, the actual size.
- * @param[out] status (optional) an error reported for this hook
- * @returns non-zero on finding a hook with such name, zero otherwise.
- */
-
-SSEH_API int SSEH_CCONV
-sseh_hook_status (const char* name, int* applied, size_t* size, char* status);
-
-/** @see #sseh_hook_status() */
-
-typedef int (SSEH_CCONV* sseh_hook_status_t)
-    (const char*, int*, size_t*, char*);
+typedef int (SSEH_CCONV* sseh_load_t) (const char*);
 
 /******************************************************************************/
 
 /**
- * Detour a function to new one.
+ * Report a JSON at given location.
  *
- * Basically patch the address so that new function in @param address is called
- * from now on. If not a nullptr, @param original can report the address of the
- * original function as it was moved.
+ * This function allows basic retrieval of information from the internal
+ * storage based on the JSON pointer reference. The current JSON structure
+ * supported by SSEH is described in separate document.
  *
- * Multiple clients will be served in order of arrival.
+ * @see https://tools.ietf.org/html/rfc6901
  *
- * @param[in] name of the hook
- * @param[in] address to the new function to be called
- * @param[out] original (optional) function address from now on.
+ * @param[in] pointer to use (e.g. "/hooks")
+ * @param[in,out] size number of bytes of the incoming @param json array. On
+ * exit reports how many bytes were actually used (w/o the terminating null)
+ * or how many bytes are needed to store the whole result (again, w/o the
+ * terminating null).
+ * @param[in] json to store the reported result
  * @returns non-zero on success, otherwise see #sseh_last_error ()
  */
 
 SSEH_API int SSEH_CCONV
-sseh_detour (const char* name, uintptr_t address, uintptr_t* original);
+sseh_identify (const char* pointer, size_t* size, char* json);
 
-/** @see #sseh_detour() */
+/** @see #sseh_identify() */
 
-typedef int (SSEH_CCONV* sseh_detour_t) (const char*, uintptr_t, uintptr_t*);
+typedef int (SSEH_CCONV* sseh_identify_t) (const char*, size_t*, char*);
 
 /**
- * Report the detours submitted for given hook.
+ * Merge a JSON patch in the internal configuration.
  *
- * As SSEH allows overpatching the same address, this function reports the
- * queue of patches submitted for that hook.
+ * Any functional changes like enabling or disabling a hook, adding a new
+ * detour or else have to be applied through a call to #sseh_apply(). Changes
+ * which does not have a direct effect upon the process memory do not need a
+ * call to #sseh_apply() (e.g. custom user fields, renaming a function, etc.)
  *
- * @param[in] name of the hook
- * @param[in,out] size of @param detours and @param originals, on exit how
- * much were overwirtten, or how much are needed.
- * @param[out] detours (optional) where is the patch pointing to now.
- * @param[out] originals (optional) addresses of previous overwrites or
- * the original itself (for the first patch).
+ * @see https://tools.ietf.org/html/rfc6902
+ *
+ * @param[in] json to merge in
  * @returns non-zero on success, otherwise see #sseh_last_error ()
  */
 
 SSEH_API int SSEH_CCONV
-sseh_enum_detours (
-    const char* name, size_t* size, uintptr_t* detours, uintptr_t* originals);
+sseh_merge_patch (const char* json);
 
-/** @see #sseh_enum_detours() */
+/** @see #sseh_merge_patch() */
 
-typedef int (SSEH_CCONV* sseh_enum_detours_t)
-    (const char*, size_t*, uintptr_t*, uintptr_t*);
+typedef int (SSEH_CCONV* sseh_merge_patch_t) (const char*);
 
 /******************************************************************************/
 
 /**
- * Apply all detours or remove, restore back all hooks previously made.
+ * Applies the SSEH configuration upon the process memory.
  *
- * This function should not be called explicitly in SKSE/SSE environment. The
- * plugin itself takes care when to enable all hooks and when to disable them.
- *
- * @param[in] apply the hooks if non-zero, or disable them - zero
+ * @note Certain fields like the addresses of "original" functions trampoline.
  * @returns non-zero on success, otherwise see #sseh_last_error ()
  */
 
 SSEH_API int SSEH_CCONV
-sseh_enable_hooks (int apply);
+sseh_apply ();
 
-/** @see #sseh_enable_hooks() */
+/** @see #sseh_apply() */
 
-typedef int (SSEH_CCONV* sseh_enable_hooks_t) (int);
+typedef int (SSEH_CCONV* sseh_apply_t) ();
 
 /******************************************************************************/
 
@@ -395,12 +262,15 @@ typedef int (SSEH_CCONV* sseh_execute_t) (const char*, void*);
 
 /******************************************************************************/
 
-/** Set of function pointers as found in this file */
+/**
+ * Set of function pointers as found in this file.
+ *
+ * Compatible changes are function pointers appened to the end of this
+ * structure.
+ */
+
 struct sseh_api_v1
 {
-    /** Holds a pointer to compatible extensions of the current API. */
-    uintptr_t next;
-
 	/** @see #sseh_version() */
 	sseh_version_t version;
 	/** @see #sseh_last_error() */
@@ -409,24 +279,16 @@ struct sseh_api_v1
 	sseh_init_t init;
 	/** @see #sseh_uninit() */
 	sseh_uninit_t uninit;
-	/** @see #sseh_map_hook() */
-	sseh_map_hook_t map_hook;
 	/** @see #sseh_find_address() */
 	sseh_find_address_t find_address;
-    /** @see #sseh_enum_hooks() */
-    sseh_enum_hooks_t enum_hooks;
-	/** @see #sseh_hook_name() */
-	sseh_hook_name_t hook_name;
-	/** @see #sseh_hook_address() */
-	sseh_hook_address_t hook_address;
-	/** @see #sseh_hook_status() */
-	sseh_hook_status_t hook_status;
-	/** @see #sseh_detour() */
-	sseh_detour_t detour;
-	/** @see #sseh_enum_detours() */
-	sseh_enum_detours_t enum_detours;
-	/** @see #sseh_enable_hooks() */
-	sseh_enable_hooks_t enable_hooks;
+	/** @see #sseh_load() */
+	sseh_load_t load;
+	/** @see #sseh_identify() */
+	sseh_identify_t identify;
+    /** @see #sseh_merge_patch() */
+    sseh_merge_patch_t merge_patch;
+	/** @see #sseh_apply() */
+	sseh_apply_t apply;
 	/** @see #sseh_execute() */
 	sseh_execute_t execute;
 };

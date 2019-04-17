@@ -110,6 +110,58 @@ copy_string (std::string& src, std::size_t* n, char* dst)
 
 //--------------------------------------------------------------------------------------------------
 
+/// Converts any fundemantal integer to a 0xabcde (made for fun)
+
+template<class T>
+std::string hex_string (T v)
+{
+    std::array<char, sizeof (T)*2+2+1> dst;
+    auto x = int (dst.size () - 2);
+    constexpr char lut[16] = {'0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'};
+    for (auto i = int (dst.size ()-1); i--; v >>= 4)
+    {
+        dst[i] = lut[v & 0xF];
+        if (v & 0xf) x = i;
+    }
+    dst.back () = '\0';
+    dst[x-1] = 'x';
+    dst[x-2] = '0';
+    return dst.data () + x - 2;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+/// As SSEH supports both string and numerical representation of function address
+
+static bool
+is_pointer (nlohmann::json const& json, std::uintptr_t* request = nullptr)
+{
+    try
+    {
+        std::uintptr_t v;
+        if (json.is_string ())
+        {
+            v = std::stoull (json.get<std::string> (), nullptr, 0);
+        }
+        else if (json.is_number ())
+        {
+            v = json.get<uintptr_t> ();
+        }
+        else
+        {
+            return false;
+        }
+        if (request) *request = v;
+        return true;
+    }
+    catch (std::exception const&)
+    {
+        return false;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
 /// Cautious call to one of the MinHook library functions.
 
 template<class Function, class... Args>
@@ -145,6 +197,53 @@ call_minhook (Function&& func, Args&&... args)
 static void
 assign_config (nlohmann::json&& json)
 {
+    std::vector<std::string> invalid_patches;
+    for (auto& hook: json["hooks"])
+    {
+        std::string module;
+        if (hook.find ("module") == hook.end () || !hook["module"].is_string ())
+            hook["module"] = module;
+        else module = hook["module"].get<std::string> ();
+
+        std::string target;
+        if (hook.find ("target") == hook.end () || !is_pointer (hook["target"]))
+            hook["target"] = target;
+        else target = hook["target"].get<std::string> ();
+
+        if (target.empty ())
+        {
+            uintptr_t address;
+            if (!sseh_find_address (module.c_str (), target.c_str (), &address));
+            {
+                std::size_t n;
+                sseh_last_error (&n, nullptr);
+                std::string err (n, '\0');
+                sseh_last_error (&n, &err[0]);
+                throw std::runtime_error (err);
+            }
+            hook["target"] = hex_string (address);
+        }
+
+        if (hook.find ("applied") == hook.end () || !hook["applied"].is_boolean ())
+            hook["applied"] = false;
+
+        if (hook.find ("status") == hook.end () || !hook["status"].is_string ())
+            hook["status"] = "new";
+
+        if (hook.find ("patches") == hook.end () || !hook["patches"].is_object ())
+            hook["patches"] = std::map<std::string, std::string> ();
+
+        invalid_patches.clear ();
+        auto& patches = hook["patches"];
+        for (auto const& patch: patches.items ())
+        {
+            auto const& value = patch.value ();
+            if (value.find ("detour") == value.end () || !is_pointer (value["detour"]))
+                invalid_patches.push_back (patch.key ());
+        }
+        for (auto const& name: invalid_patches)
+            patches.erase (name);
+    }
     std::lock_guard<std::shared_timed_mutex> lock (json_mutex);
     sseh_json.swap (json);
 }
@@ -328,9 +427,22 @@ sseh_detour (const char* module, const char* hook, const char* patch, uintptr_t 
     sseh_error.clear ();
     try
     {
-        auto h = "/hooks"s + hook;
-        if (sseh_json.find (h) == sseh_json.end ())
+        decltype (""_json_pointer) p ("/hooks/"s + hook);
+        std::lock_guard<std::shared_timed_mutex> lock (json_mutex);
+        if (sseh_json.find (p) == sseh_json.end ())
         {
+            sseh_json[p] = {
+                { "module", module },
+                { "target", "" },
+                { "patches", {
+                    { patch, {{ "detour", hex_string (detour) }}}
+                }}
+            };
+        }
+        else
+        {
+            decltype (""_json_pointer) g ("/hooks/"s + hook + "/patches/"s + patch + "/detour"s);
+            sseh_json[g] = hex_string (detour);
         }
     }
     catch (std::exception const& ex)
@@ -346,6 +458,22 @@ sseh_detour (const char* module, const char* hook, const char* patch, uintptr_t 
 SSEH_API int SSEH_CCONV
 sseh_original (const char* hook, const char* patch, uintptr_t* original)
 {
+    sseh_error.clear ();
+    try
+    {
+        std::string address ("/hooks/"s + hook + "/patches/"s + patch + "/original"s);
+        decltype (""_json_pointer) p (address);
+        std::shared_lock<std::shared_timed_mutex> lock (json_mutex);
+        if (is_pointer (sseh_json.at (p), original))
+        {
+            return true;
+        }
+        else sseh_error = __func__ + address + " is not a number or string address";
+    }
+    catch (std::exception const& ex)
+    {
+        sseh_error = __func__ + " "s + ex.what ();
+    }
     return false;
 }
 

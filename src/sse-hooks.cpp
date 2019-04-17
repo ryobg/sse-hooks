@@ -36,6 +36,7 @@
 #include <locale>
 #include <algorithm>
 #include <shared_mutex>
+#include <fstream>
 
 #include <windows.h>
 
@@ -49,41 +50,11 @@ using namespace std::string_literals;
 /// Supports SSEH specific errors in a manner of #GetLastError() and #FormatMessage()
 static thread_local std::string sseh_error;
 
-//--------------------------------------------------------------------------------------------------
-
-/// Describes a patched function as used by SSEH
-struct hook
-{
-    /// Is this hook applied/enabled?
-    bool applied;
-    /// A (error mostly) status in human-readable form
-    std::string status;
-    /// Name of the hook, case sensitive, unique.
-    std::string name;
-    /// The target address which should be or is already patched, unique.
-    std::uintptr_t target;
-    /// Describe one patch request for that #target
-    struct patch {
-        /// The address of the function to jump to, when the target is patched.
-        std::uintptr_t detour;
-        /// The address of trampoline function to use to call the original (or previous) function.
-        std::uintptr_t original;
-    };
-    /// Patches as they have been requested from SSEH.
-    std::vector<patch> patches;
-};
-
-/// All the hooks registered in SSEH.
-static std::vector<hook> hooks;
-
-/// Enable lookup of hook by its name.
-static std::map<std::string, std::size_t> hook_names;
-
-/// Enable lookup of hook by its address.
-static std::map<std::uintptr_t, std::size_t> hook_addresses;
+/// The JSON configuration database
+static nlohmann::json sseh_json;
 
 /// Lock the access to the global storage (hook* vars)
-static std::shared_timed_mutex hooks_mutex;
+static std::shared_timed_mutex json_mutex;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -169,23 +140,18 @@ call_minhook (Function&& func, Args&&... args)
 
 //--------------------------------------------------------------------------------------------------
 
+/// Validate, insert and update missing indices before assigning to #sseh_json
+
 static void
-validate_config (std::string const& str)
+assign_config (nlohmann::json&& json)
 {
-    sseh_error.clear ();
-    try
-    {
-        auto json = nlohmann::json::parse (str);
-        for (auto const& h: json["hooks"])
-        {
-            h.is_array ();
-        }
-    }
-    catch (std::exception const& ex)
-    {
-        sseh_error = __func__ + " "s + ex.what ();
-    }
+    std::lock_guard<std::shared_timed_mutex> lock (json_mutex);
+    sseh_json.swap (json);
 }
+
+//--------------------------------------------------------------------------------------------------
+
+//--------------------------------------------------------------------------------------------------
 
 //--------------------------------------------------------------------------------------------------
 
@@ -295,7 +261,20 @@ sseh_find_address (const char* module, const char* name, uintptr_t* address)
 SSEH_API int SSEH_CCONV
 sseh_load (const char* filepath)
 {
-    return false;
+    sseh_error.clear ();
+    try
+    {
+        std::ifstream fi (filepath);
+        nlohmann::json j;
+        fi >> j;
+        assign_config (std::move (j));
+    }
+    catch (std::exception const& ex)
+    {
+        sseh_error = __func__ + " "s + ex.what ();
+        return false;
+    }
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -303,7 +282,24 @@ sseh_load (const char* filepath)
 SSEH_API int SSEH_CCONV
 sseh_identify (const char* pointer, size_t* size, char* json)
 {
-    return false;
+    std::string v;
+    sseh_error.clear ();
+    try
+    {
+        decltype (""_json_pointer) p (pointer);
+        std::shared_lock<std::shared_timed_mutex> lock (json_mutex);
+        auto const& j = sseh_json.at (p);
+        if (size)
+            v = j.dump ();
+    }
+    catch (std::exception const& ex)
+    {
+        sseh_error = __func__ + " "s + ex.what ();
+        return false;
+    }
+    if (size)
+        copy_string (v, size, json);
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -311,13 +307,44 @@ sseh_identify (const char* pointer, size_t* size, char* json)
 SSEH_API int SSEH_CCONV
 sseh_merge_patch (const char* json)
 {
-    return false;
+    sseh_error.clear ();
+    try
+    {
+        assign_config (sseh_json.patch (nlohmann::json (json)));
+    }
+    catch (std::exception const& ex)
+    {
+        sseh_error = __func__ + " "s + ex.what ();
+        return false;
+    }
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
 
 SSEH_API int SSEH_CCONV
-sseh_detour (const char* name, uintptr_t address, uintptr_t* original)
+sseh_detour (const char* module, const char* hook, const char* patch, uintptr_t detour)
+{
+    sseh_error.clear ();
+    try
+    {
+        auto h = "/hooks"s + hook;
+        if (sseh_json.find (h) == sseh_json.end ())
+        {
+        }
+    }
+    catch (std::exception const& ex)
+    {
+        sseh_error = __func__ + " "s + ex.what ();
+        return false;
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_original (const char* hook, const char* patch, uintptr_t* original)
 {
     return false;
 }

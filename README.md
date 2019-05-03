@@ -261,15 +261,10 @@ Below is an example of such document:
                 "0x120ab000":
                 {
                     "original": "0x4002800",
-                    "enabled": true,
                 }
                 "0x12012000":
                 {
-                    "_comment": "'queue' shows whether this detour is to be enabled or disabled",
-
                     "original": "0x120ab000",
-                    "enabled": false,
-                    "queue": true,
                 }
             }
         },
@@ -283,9 +278,7 @@ Below is an example of such document:
             {
                 "0x120fff00":
                 {
-
                     "original": "0x80020",
-                    "enabled": true,
                 }
             }
         }

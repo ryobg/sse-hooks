@@ -35,7 +35,6 @@
 #include <vector>
 #include <locale>
 #include <algorithm>
-#include <shared_mutex>
 #include <fstream>
 
 #include <windows.h>
@@ -48,13 +47,19 @@
 using namespace std::string_literals;
 
 /// Supports SSEH specific errors in a manner of #GetLastError() and #FormatMessage()
-static thread_local std::string sseh_error;
+static std::string sseh_error;
 
 /// The JSON configuration database
 static nlohmann::json sseh_json;
 
-/// Lock the access to the global storage (hook* vars)
-static std::shared_timed_mutex json_mutex;
+/// Remember all used Minhook profiles (for proper init, uninit sequences).
+std::map<std::string, int> sseh_profiles;
+
+/// Our hook into Minhook to allow multi-state
+extern switch_globals (std::size_t);
+
+/// Shorts code below
+typedef nlohmann::json::json_pointer json_pointer;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -97,8 +102,10 @@ utf16_to_utf8 (wchar_t const* wide, std::string& out)
 /// Helper function to upload to API callers a managed range of bytes
 
 static void
-copy_string (std::string& src, std::size_t* n, char* dst)
+copy_string (std::string const& src, std::size_t* n, char* dst)
 {
+    if (!n)
+        return;
     if (dst)
     {
         if (*n > 0)
@@ -110,9 +117,9 @@ copy_string (std::string& src, std::size_t* n, char* dst)
 
 //--------------------------------------------------------------------------------------------------
 
-/// Converts any fundemantal integer to a 0xabcde (made for fun)
+/// Converts any scalar to a 0xabcde string (made for fun)
 
-template<class T>
+template<class T> static
 std::string hex_string (T v)
 {
     std::array<char, sizeof (T)*2+2+1> dst;
@@ -129,35 +136,29 @@ std::string hex_string (T v)
     return dst.data () + x - 2;
 }
 
+template<class T> static inline
+std::string hex_string (T* v)
+{
+    return hex_string (std::uintptr_t (v));
+}
+
 //--------------------------------------------------------------------------------------------------
 
-/// As SSEH supports both string and numerical representation of function address
+/// SSEH uses string representation of function address
 
 static bool
 is_pointer (nlohmann::json const& json, std::uintptr_t* request = nullptr)
 {
-    try
+    if (json.is_string ()) try
     {
-        std::uintptr_t v;
-        if (json.is_string ())
-        {
-            v = std::stoull (json.get<std::string> (), nullptr, 0);
-        }
-        else if (json.is_number ())
-        {
-            v = json.get<uintptr_t> ();
-        }
-        else
-        {
-            return false;
-        }
+        auto v = std::stoull (json.get<std::string> (), nullptr, 0);
         if (request) *request = v;
         return true;
     }
     catch (std::exception const&)
     {
-        return false;
     }
+    return false;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -192,60 +193,64 @@ call_minhook (Function&& func, Args&&... args)
 
 //--------------------------------------------------------------------------------------------------
 
-/// Validate, insert and update missing indices before assigning to #sseh_json
+/// Common try/catch block used in API methods
+
+template<class Function>
+static bool
+try_call (Function&& func)
+{
+    sseh_error.clear ();
+    try
+    {
+        func ();
+    }
+    catch (std::exception const& ex)
+    {
+        sseh_error = __func__ + " "s + ex.what ();
+        return false;
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+/// Validate the passed in configuration
 
 static void
-assign_config (nlohmann::json&& json)
+validate (nlohmann::json const& json)
 {
-    std::vector<std::string> invalid_patches;
-    for (auto& hook: json["hooks"])
+    for (auto const& it: json["map"].items ())
     {
-        std::string module;
-        if (hook.find ("module") == hook.end () || !hook["module"].is_string ())
-            hook["module"] = module;
-        else module = hook["module"].get<std::string> ();
+        auto const& map = it.value ();
+        if (!map.contains ("target"))
+            continue;
 
-        std::string target;
-        if (hook.find ("target") == hook.end () || !is_pointer (hook["target"]))
-            hook["target"] = target;
-        else target = hook["target"].get<std::string> ();
+        if (!is_pointer (map["target"]))
+            throw std::runtime_error ("/map/"s + it.key () + "/target is not string address");
 
-        if (target.empty ())
+        if (!map.contains ("detours"))
+            continue;
+
+        for (auto const& di: map["detours"].items ())
         {
-            uintptr_t address;
-            if (!sseh_find_address (module.c_str (), target.c_str (), &address));
+            try
             {
-                std::size_t n;
-                sseh_last_error (&n, nullptr);
-                std::string err (n, '\0');
-                sseh_last_error (&n, &err[0]);
-                throw std::runtime_error (err);
+                std::stoull (di.key (), nullptr, 0);
             }
-            hook["target"] = hex_string (address);
+            catch (std::exception const&)
+            {
+                throw std::runtime_error ("/map/"s + it.key () + "/detours/" + di.key ()
+                        + " is not string address");
+            }
+
+            auto const& detour = di.value ();
+            if (!detour.contains ("original") || !is_pointer (detour["original"]))
+            {
+                throw std::runtime_error ("/map/"s + it.key () + "/detours/" + di.key ()
+                        + "/original does not exist or is not a string address");
+            }
         }
-
-        if (hook.find ("applied") == hook.end () || !hook["applied"].is_boolean ())
-            hook["applied"] = false;
-
-        if (hook.find ("status") == hook.end () || !hook["status"].is_string ())
-            hook["status"] = "new";
-
-        if (hook.find ("patches") == hook.end () || !hook["patches"].is_object ())
-            hook["patches"] = std::map<std::string, std::string> ();
-
-        invalid_patches.clear ();
-        auto& patches = hook["patches"];
-        for (auto const& patch: patches.items ())
-        {
-            auto const& value = patch.value ();
-            if (value.find ("detour") == value.end () || !is_pointer (value["detour"]))
-                invalid_patches.push_back (patch.key ());
-        }
-        for (auto const& name: invalid_patches)
-            patches.erase (name);
     }
-    std::lock_guard<std::shared_timed_mutex> lock (json_mutex);
-    sseh_json.swap (json);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -264,6 +269,7 @@ sseh_version (int* api, int* maj, int* imp, const char** build)
     if (maj) *maj = ver[1];
     if (imp) *imp = ver[2];
     if (build) *build = SSEH_TIMESTAMP; //"2019-04-15T08:37:11.419416+00:00"
+    static_assert (ver[0] == SSEH_API_VERSION, "API in files VERSION and sse-hooks.h must match");
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -307,12 +313,7 @@ sseh_last_error (size_t* size, char* message)
 SSEH_API int SSEH_CCONV
 sseh_init ()
 {
-    if (!call_minhook (MH_Initialize))
-    {
-        sseh_error = __func__ + " MH_Initialize "s + sseh_error;
-        return false;
-    }
-    return true;
+    return sseh_profile ("");
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -320,16 +321,43 @@ sseh_init ()
 SSEH_API void SSEH_CCONV
 sseh_uninit ()
 {
-    if (!call_minhook (MH_Uninitialize))
+    for (auto const& p: sseh_profiles)
     {
-        sseh_error = __func__ + " MH_Uninitialize "s + sseh_error;
+        switch_globals (p.second);
+        if (!call_minhook (MH_Uninitialize))
+        {
+            sseh_error = __func__ + " MH_Uninitialize "s + sseh_error;
+        }
     }
 }
 
 //--------------------------------------------------------------------------------------------------
 
 SSEH_API int SSEH_CCONV
-sseh_find_address (const char* module, const char* name, uintptr_t* address)
+sseh_profile (const char* profile)
+{
+    auto it = sseh_profiles.find (profile);
+    if (it != sseh_profiles.end ())
+    {
+        switch_globals (it->second);
+        return true;
+    }
+
+    switch_globals (sseh_profiles.size ());
+    if (!call_minhook (MH_Initialize))
+    {
+        sseh_error = __func__ + " MH_Initialize "s + sseh_error;
+        return false;
+    }
+    sseh_json["profiles"][profile] = sseh_profiles.size ();
+    sseh_profiles.emplace (profile, sseh_profiles.size ());
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_find_address (const char* module, const char* name, void** address)
 {
     HMODULE h;
     std::wstring wm;
@@ -350,8 +378,7 @@ sseh_find_address (const char* module, const char* name, uintptr_t* address)
         return false;
     }
 
-    static_assert (sizeof (uintptr_t) == sizeof (p), "FARPROC unconvertible to uintptr_t");
-    *address = reinterpret_cast<uintptr_t> (p);
+    *address = reinterpret_cast<void*> (p);
     return true;
 }
 
@@ -360,17 +387,205 @@ sseh_find_address (const char* module, const char* name, uintptr_t* address)
 SSEH_API int SSEH_CCONV
 sseh_load (const char* filepath)
 {
+    return try_call ([&]
+    {
+        std::ifstream fi (filepath);
+        if (!fi.is_open ())
+            throw std::runtime_error ("unable to read file");
+        nlohmann::json j;
+        fi >> j;
+        validate (j);
+        sseh_json.swap (j);
+    });
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_map_name (const char* name, uintptr_t address)
+{
+    std::uintptr_t target;
+    if (sseh_find_target (name, &target))
+    {
+        if (target == address)
+            return true;
+        sseh_error = __func__ + " target already different"s;
+        return false;
+    }
+
+    return try_call ([&]
+    {
+        sseh_json["map"][name]["target"] = hex_string (address);
+    });
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_find_target (const char* name, uintptr_t* target)
+{
     sseh_error.clear ();
     try
     {
-        std::ifstream fi (filepath);
-        nlohmann::json j;
-        fi >> j;
-        assign_config (std::move (j));
+        json_pointer p ("/map/"s + name + "/target"s);
+        if (!sseh_json.contains (p))
+            return false;
+        if (!is_pointer (sseh_json[p], target))
+            throw std::runtime_error ("target not a pointer");
     }
     catch (std::exception const& ex)
     {
         sseh_error = __func__ + " "s + ex.what ();
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_find_name (uintptr_t target, size_t* size, char* name)
+{
+    sseh_error.clear ();
+    try
+    {
+        for (auto const& map: sseh_json["map"].items ())
+        {
+            std::uintptr_t address;
+            auto const& value = map.value ();
+            if (value.contains ("target")
+                    && is_pointer (value["target"], &address)
+                    && address == target)
+            {
+                copy_string (map.key (), size, name);
+                return true;
+            }
+        }
+    }
+    catch (std::exception const& ex)
+    {
+        sseh_error = __func__ + " "s + ex.what ();
+    }
+    return false;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_detour (const char* name, void* detour, void** original)
+{
+    void *target = nullptr,
+         *trampoline = nullptr;
+
+    if (const char* module = std::strchr (name, '@'))
+    {
+        std::string map (name, module);
+        if (!sseh_find_address (map.c_str (), ++module, &target))
+            return false;
+    }
+    else
+    {
+        if (!sseh_find_target (name, reinterpret_cast<uintptr_t*> (&target)))
+            return false;
+    }
+
+    if (!call_minhook (MH_CreateHook, target, detour, &trampoline))
+    {
+        sseh_error = __func__ + " MH_CreateHook "s + sseh_error;
+        return false;
+    }
+
+    if (!call_minhook (MH_QueueEnableHook, target))
+    {
+        sseh_error = __func__ + " MH_QueueEnableHook "s + sseh_error;
+        return false;
+    }
+
+    sseh_error.clear ();
+    try
+    {
+        auto& json = sseh_json["map"][name];
+        json["target"] = hex_string (target);
+        json["detours"][hex_string (detour)] = {
+            { "original", hex_string (trampoline) }
+        };
+    }
+    catch (std::exception const& ex)
+    {
+        sseh_error = __func__ + " "s + ex.what ();
+        return false;
+    }
+
+    if (original)
+        *original = trampoline;
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_enable (const char* name)
+{
+    std::uintptr_t target;
+    if (!sseh_find_target (name, &target))
+        return false;
+    if (!call_minhook (MH_QueueEnableHook, (void*) target))
+    {
+        sseh_error = __func__ + " MH_QueueEnableHook "s + sseh_error;
+        return false;
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_disable (const char* name)
+{
+    std::uintptr_t target;
+    if (!sseh_find_target (name, &target))
+        return false;
+    if (!call_minhook (MH_QueueDisableHook, (void*) target))
+    {
+        sseh_error = __func__ + " MH_QueueDisableHook "s + sseh_error;
+        return false;
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_enable_all ()
+{
+    if (!call_minhook (MH_QueueEnableHook, nullptr))
+    {
+        sseh_error = __func__ + " MH_QueueEnableHook "s + sseh_error;
+        return false;
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_disable_all ()
+{
+    if (!call_minhook (MH_QueueDisableHook, nullptr))
+    {
+        sseh_error = __func__ + " MH_QueueDisableHook "s + sseh_error;
+        return false;
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+SSEH_API int SSEH_CCONV
+sseh_apply ()
+{
+    if (!call_minhook (MH_ApplyQueued))
+    {
+        sseh_error = __func__ + " MH_ApplyQueued "s + sseh_error;
         return false;
     }
     return true;
@@ -381,24 +596,12 @@ sseh_load (const char* filepath)
 SSEH_API int SSEH_CCONV
 sseh_identify (const char* pointer, size_t* size, char* json)
 {
-    std::string v;
-    sseh_error.clear ();
-    try
+    return try_call ([&]
     {
-        decltype (""_json_pointer) p (pointer);
-        std::shared_lock<std::shared_timed_mutex> lock (json_mutex);
-        auto const& j = sseh_json.at (p);
+        auto const& j = sseh_json.at (json_pointer (pointer));
         if (size)
-            v = j.dump ();
-    }
-    catch (std::exception const& ex)
-    {
-        sseh_error = __func__ + " "s + ex.what ();
-        return false;
-    }
-    if (size)
-        copy_string (v, size, json);
-    return true;
+            copy_string (j.dump (), size, json);
+    });
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -406,83 +609,12 @@ sseh_identify (const char* pointer, size_t* size, char* json)
 SSEH_API int SSEH_CCONV
 sseh_merge_patch (const char* json)
 {
-    sseh_error.clear ();
-    try
+    return try_call ([&]
     {
-        assign_config (sseh_json.patch (nlohmann::json (json)));
-    }
-    catch (std::exception const& ex)
-    {
-        sseh_error = __func__ + " "s + ex.what ();
-        return false;
-    }
-    return true;
-}
-
-//--------------------------------------------------------------------------------------------------
-
-SSEH_API int SSEH_CCONV
-sseh_detour (const char* module, const char* hook, const char* patch, uintptr_t detour)
-{
-    sseh_error.clear ();
-    try
-    {
-        decltype (""_json_pointer) p ("/hooks/"s + hook);
-        std::lock_guard<std::shared_timed_mutex> lock (json_mutex);
-        if (sseh_json.find (p) == sseh_json.end ())
-        {
-            sseh_json[p] = {
-                { "module", module },
-                { "target", "" },
-                { "patches", {
-                    { patch, {{ "detour", hex_string (detour) }}}
-                }}
-            };
-        }
-        else
-        {
-            decltype (""_json_pointer) g ("/hooks/"s + hook + "/patches/"s + patch + "/detour"s);
-            sseh_json[g] = hex_string (detour);
-        }
-    }
-    catch (std::exception const& ex)
-    {
-        sseh_error = __func__ + " "s + ex.what ();
-        return false;
-    }
-    return true;
-}
-
-//--------------------------------------------------------------------------------------------------
-
-SSEH_API int SSEH_CCONV
-sseh_original (const char* hook, const char* patch, uintptr_t* original)
-{
-    sseh_error.clear ();
-    try
-    {
-        std::string address ("/hooks/"s + hook + "/patches/"s + patch + "/original"s);
-        decltype (""_json_pointer) p (address);
-        std::shared_lock<std::shared_timed_mutex> lock (json_mutex);
-        if (is_pointer (sseh_json.at (p), original))
-        {
-            return true;
-        }
-        else sseh_error = __func__ + address + " is not a number or string address";
-    }
-    catch (std::exception const& ex)
-    {
-        sseh_error = __func__ + " "s + ex.what ();
-    }
-    return false;
-}
-
-//--------------------------------------------------------------------------------------------------
-
-SSEH_API int SSEH_CCONV
-sseh_apply ()
-{
-    return false;
+        auto j = sseh_json.patch (nlohmann::json (json));
+        validate (j);
+        sseh_json.swap (j);
+    });
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -505,9 +637,17 @@ sseh_make_api ()
 	api.uninit       = sseh_uninit;
 	api.find_address = sseh_find_address;
 	api.load         = sseh_load;
+	api.map_name     = sseh_map_name;
+	api.find_target  = sseh_find_target;
+	api.find_name    = sseh_find_name;
+	api.detour       = sseh_detour;
+	api.enable       = sseh_enable;
+	api.disable      = sseh_disable;
+	api.enable_all   = sseh_enable_all;
+	api.disable_all  = sseh_disable_all;
+	api.apply        = sseh_apply;
 	api.identify     = sseh_identify;
 	api.merge_patch  = sseh_merge_patch;
-	api.apply        = sseh_apply;
 	api.execute      = sseh_execute;
     return api;
 }

@@ -33,7 +33,6 @@
 #endif
 
 #include <windows.h>
-#include <functional>
 
 // MinHook Error Codes.
 typedef enum MH_STATUS
@@ -80,7 +79,10 @@ typedef enum MH_STATUS
     MH_ERROR_MODULE_NOT_FOUND,
 
     // The specified function is not found.
-    MH_ERROR_FUNCTION_NOT_FOUND
+    MH_ERROR_FUNCTION_NOT_FOUND,
+
+    // Failed to create, or to wait for the main mutex.
+    MH_ERROR_MUTEX_FAILURE
 }
 MH_STATUS;
 
@@ -161,8 +163,6 @@ extern "C" {
     //                disabled in one go.
     MH_STATUS WINAPI MH_DisableHook(LPVOID pTarget);
 
-    MH_STATUS WINAPI MH_QueueHook(LPVOID pTarget, BOOL queueEnable); //FIXME:
-
     // Queues to enable an already created hook.
     // Parameters:
     //   pTarget [in] A pointer to the target function.
@@ -178,7 +178,7 @@ extern "C" {
     MH_STATUS WINAPI MH_QueueDisableHook(LPVOID pTarget);
 
     // Applies all queued changes in one go.
-    MH_STATUS WINAPI MH_ApplyQueued(std::function<void(LPVOID,MH_STATUS)>); //FIXME:
+    MH_STATUS WINAPI MH_ApplyQueued(VOID);
 
     // Translates the MH_STATUS to its name as a string.
     const char * WINAPI MH_StatusToString(MH_STATUS status);

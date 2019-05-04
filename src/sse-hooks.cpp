@@ -76,8 +76,8 @@ utf8_to_utf16 (char const* bytes, std::wstring& out)
     if (bytes_size < 1) return true;
     int sz = ::MultiByteToWideChar (CP_UTF8, 0, bytes, bytes_size, NULL, 0);
     if (sz < 1) return false;
-    std::wstring ws (sz, 0);
-    ::MultiByteToWideChar (CP_UTF8, 0, bytes, bytes_size, &ws[0], sz);
+    out.resize (sz, 0);
+    ::MultiByteToWideChar (CP_UTF8, 0, bytes, bytes_size, &out[0], sz);
     return true;
 }
 
@@ -92,8 +92,8 @@ utf16_to_utf8 (wchar_t const* wide, std::string& out)
     if (wide_size < 1) return true;
     int sz = ::WideCharToMultiByte (CP_UTF8, 0, wide, wide_size, NULL, 0, NULL, NULL);
     if (sz < 1) return false;
-    std::string s (sz, 0);
-    ::WideCharToMultiByte (CP_UTF8, 0, wide, wide_size, &s[0], sz, NULL, NULL);
+    out.resize (sz, 0);
+    ::WideCharToMultiByte (CP_UTF8, 0, wide, wide_size, &out[0], sz, NULL, NULL);
     return true;
 }
 
@@ -112,7 +112,7 @@ copy_string (std::string const& src, std::size_t* n, char* dst)
             *std::copy_n (src.cbegin (), std::min (*n-1, src.size ()), dst) = '\0';
         else *dst = 0;
     }
-    *n = src.size ();
+    *n = src.size () + 1;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -359,24 +359,17 @@ sseh_profile (const char* profile)
 SSEH_API int SSEH_CCONV
 sseh_find_address (const char* module, const char* name, void** address)
 {
-    HMODULE h;
     std::wstring wm;
-
     if (!utf8_to_utf16 (module, wm))
         return false;
 
-    if (!::GetModuleHandleEx (0, wm.empty () ? nullptr : wm.data (), &h))
+    auto h = ::GetModuleHandle (wm.empty () ? nullptr : wm.c_str ());
+	if (!h)
         return false;
 
     auto p = ::GetProcAddress (h, name);
-
-    ::FreeLibrary (h);
-
     if (!p)
-    {
-        sseh_error = __func__ + " procedure not found"s;
         return false;
-    }
 
     *address = reinterpret_cast<void*> (p);
     return true;

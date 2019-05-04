@@ -472,7 +472,7 @@ sseh_detour (const char* name, void* detour, void** original)
     if (const char* module = std::strchr (name, '@'))
     {
         std::string map (name, module);
-        if (!sseh_find_address (map.c_str (), ++module, &target))
+        if (!sseh_find_address (++module, map.c_str (), &target))
             return false;
     }
     else

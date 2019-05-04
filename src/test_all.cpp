@@ -27,11 +27,52 @@
  */
 
 #include <sse-hooks/sse-hooks.h>
+#include <nlohmann/json.hpp>
+
+#include <iostream>
+
+//--------------------------------------------------------------------------------------------------
+
+static void trials ()
+{
+    using namespace std;
+    using nlohmann::json;
+    typedef json::json_pointer json_pointer;
+
+    auto j = R"(
+{
+    "_comment": "Keys prefixed with underscore are not actually part of the document.",
+
+    "SSEH" : {
+        "version": "1.0.0"
+    },
+
+    "map" :
+    {
+        "GetWindowText@user32":
+        {
+            "_comment": "Module based detours are remembered too",
+
+            "target" : "0x12000",
+            "detours":
+            {
+                "0x120fff00":
+                {
+                    "original": "0x80020"
+                }
+            }
+        }
+    }
+}
+        )"_json;
+
+    cout << j.at (json_pointer ("")) << endl;
+}
 
 //--------------------------------------------------------------------------------------------------
 
 /// Test whether we will crash with nullptr arguments
-bool test_sseh_version ()
+static bool test_sseh_version ()
 {
     int a, m, i;
     const char* b;
@@ -51,6 +92,7 @@ int main ()
 {
     int ret = 0;
     ret += test_sseh_version ();
+    trials ();
     return ret;
 }
 

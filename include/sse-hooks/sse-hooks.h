@@ -424,6 +424,8 @@ struct sseh_api_v1
 	sseh_init_t init;
 	/** @see #sseh_uninit() */
 	sseh_uninit_t uninit;
+	/** @see #sseh_profile() */
+	sseh_profile_t profile;
 	/** @see #sseh_find_address() */
 	sseh_find_address_t find_address;
 	/** @see #sseh_load() */

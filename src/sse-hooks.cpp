@@ -46,6 +46,9 @@
 
 using namespace std::string_literals;
 
+/// Shorts code below
+typedef nlohmann::json::json_pointer json_pointer;
+
 /// Supports SSEH specific errors in a manner of #GetLastError() and #FormatMessage()
 static std::string sseh_error;
 
@@ -57,9 +60,6 @@ std::map<std::string, int> sseh_profiles;
 
 /// Our hook into Minhook to allow multi-state
 extern switch_globals (std::size_t);
-
-/// Shorts code below
-typedef nlohmann::json::json_pointer json_pointer;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -598,9 +598,9 @@ sseh_identify (const char* pointer, size_t* size, char* json)
 {
     return try_call ([&]
     {
-        auto const& j = sseh_json.at (json_pointer (pointer));
+        auto const& j = sseh_json.at (json_pointer (pointer == "/"s ? "" : pointer));
         if (size)
-            copy_string (j.dump (), size, json);
+            copy_string (j.dump (4), size, json);
     });
 }
 
@@ -635,6 +635,7 @@ sseh_make_api ()
 	api.last_error   = sseh_last_error;
 	api.init         = sseh_init;
 	api.uninit       = sseh_uninit;
+	api.profile      = sseh_profile;
 	api.find_address = sseh_find_address;
 	api.load         = sseh_load;
 	api.map_name     = sseh_map_name;

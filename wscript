@@ -77,7 +77,7 @@ def build (bld):
     for src in bld.path.ant_glob ("src/test_*.cpp"):
         f = os.path.basename (str (src))
         f = os.path.splitext (f)[0]
-        bld.program (target=f, source=[src], includes='include', use=APPNAME)
+        bld.program (target=f, source=[src], includes=['include', 'share'], use=APPNAME)
 
 #---------------------------------------------------------------------------------------------------
 

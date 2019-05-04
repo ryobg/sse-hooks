@@ -99,21 +99,12 @@ log_error ()
 
 //--------------------------------------------------------------------------------------------------
 
-/// Small helper function to get the last error and log it (if stream is opened).
-
-static void
-log_config ()
-{
-}
-
-//--------------------------------------------------------------------------------------------------
-
 void handle_skse_message (SKSEMessagingInterface::Message* m)
 {
-    if (!m || m->type != SKSEMessagingInterface::kMessage_PostLoad)
+    if (m->type != SKSEMessagingInterface::kMessage_PostPostLoad)
         return;
 
-    log () << "All mods reported as loaded." << std::endl;
+    log () << "All mods reported as loaded and listening." << std::endl;
 
     int api;
     sseh_version (&api, nullptr, nullptr, nullptr);
@@ -121,13 +112,23 @@ void handle_skse_message (SKSEMessagingInterface::Message* m)
     messages->Dispatch (plugin, UInt32 (api), &data, sizeof (data), nullptr);
 
     log () << "SSEH interface broadcasted." << std::endl;
-    log_config ();
 
     if (!sseh_apply ())
+    {
         log_error ();
-    else
-        log () << "Applied." << std::endl;
-    log_config ();
+        return;
+    }
+    log () << "Applied." << std::endl;
+
+    std::size_t n;
+    if (sseh_identify ("/", &n, nullptr))
+    {
+        std::string s (n, '\0');
+        sseh_identify ("/", &n, &s[0]);
+        log () << s << std::endl;
+    }
+
+    messages->Dispatch (plugin, 0, nullptr, 0, nullptr);
     log () << "All done." << std::endl;
 }
 

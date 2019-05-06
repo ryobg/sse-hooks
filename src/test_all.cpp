@@ -41,32 +41,32 @@ static void trials ()
 
     auto j = R"(
 {
-    "_comment": "Keys prefixed with underscore are not actually part of the document.",
-
-    "SSEH" : {
-        "version": "1.0.0"
-    },
-
-    "map" :
-    {
-        "GetWindowText@user32":
-        {
-            "_comment": "Module based detours are remembered too",
-
-            "target" : "0x12000",
-            "detours":
-            {
-                "0x120fff00":
-                {
-                    "original": "0x80020"
+    "map": {
+        "D3D11CreateDeviceAndSwapChain@d3d11.dll": {
+            "detours": {
+                "0x70a2b9b0": {
+                    "original": "0x7ffe81aa0fd6"
                 }
-            }
+            },
+            "target": "0x7ffe81ac5950"
+        },
+        "Skyrim.IDXGISwapChain::Present": {
+            "target": "0x7ffe834b5070"
+        },
+        "a": {
+            "target": "0x0"
         }
+    },
+    "profiles": {
+        "": 0,
+        "SSGUI": 1
     }
 }
         )"_json;
 
-    cout << j.at (json_pointer ("")) << endl;
+    json_pointer p ("/map/a/target");
+    auto r = j.at (p);
+    cout << r << " " << endl;
 }
 
 //--------------------------------------------------------------------------------------------------

@@ -420,15 +420,14 @@ sseh_find_target (const char* name, uintptr_t* target)
     sseh_error.clear ();
     try
     {
-        json_pointer p ("/map/"s + name + "/target"s);
-        if (!sseh_json.contains (p))
-            return false;
-        if (!is_pointer (sseh_json[p], target))
+        auto const& json = sseh_json.at (json_pointer ("/map/"s + name + "/target"s));
+        if (!is_pointer (json, target))
             throw std::runtime_error ("target not a pointer");
     }
     catch (std::exception const& ex)
     {
         sseh_error = __func__ + " "s + ex.what ();
+        return false;
     }
     return true;
 }

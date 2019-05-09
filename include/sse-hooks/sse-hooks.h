@@ -180,9 +180,7 @@ typedef int (SSEH_CCONV* sseh_find_address_t)
 /******************************************************************************/
 
 /**
- * Load from file and replace the JSON configuration.
- *
- * Subsequent dublicates will be deleted. Custom entries will be kept intact.
+ * Load from file or string and replace the JSON configuration.
  *
  * @param[in] filepath to read from
  */

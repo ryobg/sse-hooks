@@ -30,6 +30,7 @@
  */
 
 #include <sse-hooks/sse-hooks.h>
+#include <utils/winutils.hpp>
 
 #include <cstdint>
 typedef std::uint32_t UInt32;
@@ -54,11 +55,17 @@ static std::ofstream logfile;
 
 //--------------------------------------------------------------------------------------------------
 
-/// TODO: Better location
-
-static void open_log ()
+static void
+open_log ()
 {
-    logfile.open ("sseh.log");
+     std::string path;
+    if (known_folder_path (FOLDERID_Documents, path))
+    {
+        // Before plugins are loaded, SKSE takes care to create the directiories
+        path += "\\My Games\\Skyrim Special Edition\\SKSE\\";
+    }
+    path += "sseh.log";
+    logfile.open (path);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -76,6 +83,7 @@ log ()
             << '-' << std::setw (2) << std::setfill ('0') << loc_c->tm_mday
             << ' ' << std::setw (2) << std::setfill ('0') << loc_c->tm_hour
             << ':' << std::setw (2) << std::setfill ('0') << loc_c->tm_min
+            << ':' << std::setw (2) << std::setfill ('0') << loc_c->tm_sec
         << "] ";
     return logfile;
 }
@@ -103,14 +111,12 @@ void handle_skse_message (SKSEMessagingInterface::Message* m)
 {
     if (m->type != SKSEMessagingInterface::kMessage_PostPostLoad)
         return;
-
-    log () << "All mods reported as loaded and listening." << std::endl;
+    log () << "SKSE Post-Post Load." << std::endl;
 
     int api;
     sseh_version (&api, nullptr, nullptr, nullptr);
     auto data = sseh_make_api ();
     messages->Dispatch (plugin, UInt32 (api), &data, sizeof (data), nullptr);
-
     log () << "SSEH interface broadcasted." << std::endl;
 
     if (!sseh_apply ())
@@ -120,15 +126,7 @@ void handle_skse_message (SKSEMessagingInterface::Message* m)
     }
     log () << "Applied." << std::endl;
 
-    std::size_t n;
-    if (sseh_identify ("/", &n, nullptr))
-    {
-        std::string s (n, '\0');
-        sseh_identify ("/", &n, &s[0]);
-        log () << s << std::endl;
-    }
-
-    messages->Dispatch (plugin, 0, nullptr, 0, nullptr);
+    messages->Dispatch (plugin, UInt32 (api), nullptr, 0, nullptr);
     log () << "All done." << std::endl;
 }
 
@@ -164,9 +162,6 @@ SKSEPlugin_Load (SKSEInterface const* skse)
     open_log ();
 
     messages = (SKSEMessagingInterface*) skse->QueryInterface (kInterface_Messaging);
-    if (!messages)
-        return false;
-
     messages->RegisterListener (plugin, "SKSE", handle_skse_message);
 
     int a, m, p;

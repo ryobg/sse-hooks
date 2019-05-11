@@ -5,8 +5,8 @@ for uniform patch framework of Skyrim SE implemented as SKSE plugin.
 
 General features:
 
-* Detour functions from the process memory (relies on MinHook for that
-  https://github.com/TsudaKageyu/minhook and https://github.com/m417z/minhook)
+* Detour functions from the process memory (relies on https://github.com/TsudaKageyu/minhook and 
+  https://github.com/m417z/minhook)
 * Flexible configuration management for what and where (relies on JSON, see
   https://github.com/nlohmann/json)
 * Integrates small default logic for making SSEH a SKSE plugin
@@ -18,7 +18,7 @@ General features:
 
 ```c++
 extern decltype (GetWindowText) original;
-if (sseh_detour ("GetWindowText@user32", my_window_text, &original))
+if (sseh_detour ("GetWindowText@user32.dll", (void*) my_window_text, (void*) &original))
     sseh_apply ();
 ```
 
@@ -35,7 +35,7 @@ int my_window_text (HWND h, LPSTR s, int c)
 ## SKSE plugins
 
 Need only the headers from `include` and the DLL itself installed as SKSE plugin. Then just take the
-pointer to the API during mod load and use.
+pointer to the API during mod load-load and use.
 
 ```c++
 #include <sse-hooks/sse-hooks.h>
@@ -44,16 +44,24 @@ extern "C" SSEH_API bool SSEH_CCONV
 SKSEPlugin_Load (SKSEInterface const* skse)
 {
     auto p = (SKSEMessagingInterface*) skse->QueryInterface (kInterface_Messaging);
-    p->RegisterListener (plugin, "SSEH", assign_sseh_interface);
+    p->RegisterListener (plugin, "SKSE", handle_skse_message);
 }
 
-static sseh_api sseh;
+void handle_skse_message (SKSEMessagingInterface::Message* m)
+{
+    if (m->type == SKSEMessagingInterface::kMessage_PostLoad)
+        messages->RegisterListener (plugin, "SSEH", handle_sseh_message);
+}
 
 void assign_sseh_interface (SKSEMessagingInterface::Message* m)
 {
-    assert (m->type == SSEH_API_VERSION);
-    assert (m->dataLen >= sizeof (sseh_api)); // can be bigger if compatible
-    sseh = *reinterpret_cast<sseh_api*> (m->data);
+    if (m->type != SSEH_API_VERSION)
+        return;
+    if (m->dataLen == 0) // after sseh_apply ()
+        // likely okay, but may check with sseh_last_error ()
+        return;
+    auto sseh = *reinterpret_cast<sseh_api*> (m->data);
+    //...
 }
 ```
 
@@ -90,12 +98,19 @@ for any data field or function which are not going to be detoured later on.
     2. And/or call `sseh_map_name ()`
 3. Create detours of function(s) with `sseh_detour ()`.
 4. Apply one or more hooks through `sseh_enable ()` and at then end - `sseh_apply ()`
-5. If all okay, do whatever is needed and at the end close the library by calling `sseh_uninit ()`
 
 If the operating environment for SSEH is as SKSE plugin, then most of these operations are handled
 by the default implementation of the bundled plugin. SKSE plugin developers need only to get the
 interface, detour functions and wait for them to be called. The plugin takes care to initialize the
-library, load a default JSON file, wait for any detours and apply all of them on the go.
+library, wait for any detours and apply all of them on the go:
+
+1. During SKSE Post Load, register a listener for handling SSEH messages 
+2. When the SSEH handled is invoked, it is called only once with the interface pointers supplied
+3. Do any detours
+4. During Post-Post Load, SSEH will apply the detours and broadcast again, but with zero message
+4. Maybe check whether detours are okay by calling `sseh_last_error()`
+
+See the example above.
 
 # API details
 
@@ -149,7 +164,7 @@ useful to find the colliding elements.
 std::uintptr_t target;
 if (sseh_find_target ("ConsoleManager", &target))
     //...
-if (sseh_find_target ("GetWindowText@user32", &target))
+if (sseh_find_target ("GetWindowText@user32.dll", &target))
     //...
 std::size_t n;
 if (sseh_find_name (0x400200, &n, nullptr))
@@ -166,7 +181,7 @@ function which will call the original. If the passed in name is recognized as mo
 
 ```c++
 void* original;
-if (sseh_detour ("GetWindowText@user32", my_window_text, &original))
+if (sseh_detour ("GetWindowText@user32.dll", my_window_text, &original))
     //...
 ```
 
@@ -199,10 +214,10 @@ is advised that each one of them has its unique profile.
 
 ```c++
 sseh_profile ("MyPlugin");
-sseh_detour ("GetWindowText@user32", my_window_text, &original);
+sseh_detour ("GetWindowText@user32.dll", my_window_text, &original);
 sseh_apply ();
 sseh_profile ("AnotherPlugin");
-sseh_detour ("GetWindowText@user32", other_window_text, &other_original);
+sseh_detour ("GetWindowText@user32.dll", other_window_text, &other_original);
 sseh_apply ();
 ```
 
@@ -261,7 +276,7 @@ Below is an example of such document:
                 "0x120ab000":
                 {
                     "original": "0x4002800",
-                }
+                },
                 "0x12012000":
                 {
                     "original": "0x120ab000",
@@ -269,7 +284,7 @@ Below is an example of such document:
             }
         },
 
-        "GetWindowText@user32":
+        "GetWindowText@user32.dll":
         {
             "_comment": "Module based detours are remembered too",
 
@@ -300,7 +315,7 @@ Below is an example of such document:
 
 ## License
 
-LGPLv3, see the LICENSE.md file. 
+LGPLv3, see the LICENSE.md file. Parts in the `share/` folder have their own license.
 
 The idea is to promote this library as open source project, but still keep it as shared resource.
 LGPL allows closed source projects to use SSEH, but only when it is used as DLL. If a project wants

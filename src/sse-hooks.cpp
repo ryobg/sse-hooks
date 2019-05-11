@@ -42,6 +42,7 @@
 
 #include <MinHook.h>
 #include <nlohmann/json.hpp>
+#include <utils/winutils.hpp>
 
 //--------------------------------------------------------------------------------------------------
 
@@ -289,11 +290,10 @@ sseh_load (const char* filepath)
 {
     return try_call ([&]
     {
-        std::ifstream fi (filepath);
-        if (!fi.is_open ())
-            throw std::runtime_error ("unable to read file");
         nlohmann::json j;
-        fi >> j;
+        std::ifstream fi (filepath);
+        if (fi.is_open ()) fi >> j;
+        else j = nlohmann::json::parse (filepath);
         validate (j);
         sseh_json.swap (j);
     });

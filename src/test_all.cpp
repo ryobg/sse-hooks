@@ -33,13 +33,16 @@
 
 //--------------------------------------------------------------------------------------------------
 
-static void trials ()
-{
-    using namespace std;
-    using nlohmann::json;
-    typedef json::json_pointer json_pointer;
+using namespace std;
+using nlohmann::json;
+typedef json::json_pointer json_pointer;
 
-    auto j = R"(
+#define TEST(x) \
+    if (!x) result = false, std::cout << "Test fail " << __FILE__ << ":" << __LINE__ << std::endl;
+
+//--------------------------------------------------------------------------------------------------
+
+static const char* generic_json = R"(
 {
     "map": {
         "D3D11CreateDeviceAndSwapChain@d3d11.dll": {
@@ -50,11 +53,8 @@ static void trials ()
             },
             "target": "0x7ffe81ac5950"
         },
-        "Skyrim.IDXGISwapChain::Present": {
+        "IDXGISwapChain::Present": {
             "target": "0x7ffe834b5070"
-        },
-        "a": {
-            "target": "0x0"
         }
     },
     "profiles": {
@@ -62,17 +62,22 @@ static void trials ()
         "SSGUI": 1
     }
 }
-        )"_json;
+        )";
 
-    json_pointer p ("/map/a/target");
-    auto r = j.at (p);
-    cout << r << " " << endl;
+//--------------------------------------------------------------------------------------------------
+
+static bool
+test_loading ()
+{
+    bool result = true;
+    TEST (sseh_load (generic_json));
+    return result;
 }
 
 //--------------------------------------------------------------------------------------------------
 
-/// Test whether we will crash with nullptr arguments
-static bool test_sseh_version ()
+static bool
+test_sseh_version ()
 {
     int a, m, i;
     const char* b;
@@ -92,7 +97,7 @@ int main ()
 {
     int ret = 0;
     ret += test_sseh_version ();
-    trials ();
+    ret += test_loading ();
     return ret;
 }
 

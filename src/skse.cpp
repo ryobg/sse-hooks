@@ -107,6 +107,9 @@ log_error ()
 
 //--------------------------------------------------------------------------------------------------
 
+/// SKSE Post Load allows plugins to register as listeners to SSEH
+/// Hence SKSE Post-Post Load is where the interface is emitted and default hooks applied
+
 void handle_skse_message (SKSEMessagingInterface::Message* m)
 {
     if (m->type != SKSEMessagingInterface::kMessage_PostPostLoad)
@@ -169,12 +172,26 @@ SKSEPlugin_Load (SKSEInterface const* skse)
     sseh_version (&a, &m, &p, &b);
     log () << "SSEH "<< a <<'.'<< m <<'.'<< p <<" ("<< b <<')' << std::endl;
 
-    int r = sseh_init ();
+    if (!sseh_init ())
+    {
+        log_error ();
+        return false;
+    }
+    log () << "Initialized." << std::endl;
 
-    if (r) log () << "Initialized." << std::endl;
-    else log_error ();
+    const char* default_json = "Data\\SKSE\\Plugins\\sseh.json";
+    std::ifstream test (default_json);
+    if (test.is_open ()) // Avoid log warnings
+    {
+        test.close ();
+        if (!sseh_load (default_json))
+        {
+            log_error ();
+            log () << "Unable to load " << default_json << std::endl;
+        }
+    }
 
-    return r;
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------

@@ -19,7 +19,7 @@
  *
  * @endinternal
  *
- * @ingroup Public API
+ * @ingroup Utilities
  *
  * @details
  * Small help functions which seems to be reused across the projects. This file is
@@ -34,7 +34,10 @@
 #include <array>
 #include <algorithm>
 
+#ifndef NTDDI_VERSION
 #define NTDDI_VERSION NTDDI_VISTA // Default is NT, cross finger ppl dont use WinXP to play Skyrim
+#endif
+
 #include <windows.h>
 #include <shlobj.h>
 #include <initguid.h>
@@ -102,15 +105,15 @@ copy_string (In const& src, std::size_t* n, Out* dst)
 /// Converts any scalar to a 0xabcde string (made for fun)
 
 template<class T> static
-std::string hex_string (T v)
+std::string hex_string (T v, bool shrink = true)
 {
     std::array<char, sizeof (T)*2+2+1> dst;
-    auto x = int (dst.size () - 2);
+    auto x = shrink ? int (dst.size () - 2) : 2;
     constexpr char lut[16] = {'0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'};
     for (auto i = int (dst.size ()-1); i--; v >>= 4)
     {
         dst[i] = lut[v & 0xF];
-        if (v & 0xf) x = i;
+        if (shrink && (v & 0xf)) x = i;
     }
     dst.back () = '\0';
     dst[x-1] = 'x';
@@ -127,30 +130,6 @@ std::string hex_string (T* v)
 //--------------------------------------------------------------------------------------------------
 
 template<class T>
-std::string
-format_utf8message (T error_code)
-{
-    std::string m;
-
-    LPTSTR buff = nullptr;
-    FormatMessage (
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr, error_code, MAKELANGID (LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPTSTR) &buff, 0, nullptr);
-
-    if (!utf16_to_utf8 (buff, m))
-    {
-        ::LocalFree (buff);
-        throw std::runtime_error ("Unable to convert from UTF-16 to UTF-8");
-    }
-
-    ::LocalFree (buff);
-    return m;
-}
-
-//--------------------------------------------------------------------------------------------------
-
-template<class T>
 bool
 known_folder_path (REFKNOWNFOLDERID rfid, T& path)
 {
@@ -162,6 +141,57 @@ known_folder_path (REFKNOWNFOLDERID rfid, T& path)
     return ret;
 }
 
+//--------------------------------------------------------------------------------------------------
+
+/// ::FormatMessage for error code and convert to UTF-8
+std::string format_utf8message (DWORD error_code);
+
+/// Report as text the given windows message (e.g. WM_*) identifier
+const char* window_message_text (unsigned msg);
+
+//--------------------------------------------------------------------------------------------------
+
+/// Including file permissions and etc. errors
+
+template<class T>
+bool file_exists (T const& name) //allow const char*
+{
+    std::wstring w;
+    utf8_to_utf16 (name.c_str (), w);
+    DWORD attr = ::GetFileAttributesW (w.c_str ());
+    if (attr == INVALID_FILE_ATTRIBUTES)
+        return false;
+    return !(attr & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+//--------------------------------------------------------------------------------------------------
+
+template<class Container>
+bool
+enumerate_files (std::string const& wildcard, Container& out)
+{
+    std::wstring w;
+    if (!utf8_to_utf16 (wildcard.c_str (), w))
+        return false;
+    out.clear ();
+    WIN32_FIND_DATA fd;
+    auto h = ::FindFirstFile (w.c_str (), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
+    do
+    {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            continue;
+        std::string s;
+        if (!utf16_to_utf8 (fd.cFileName, s))
+            break;
+        out.emplace_back (std::move (s));
+    }
+    while (::FindNextFile (h, &fd));
+    auto e = ::GetLastError ();
+    ::FindClose (h);
+    return e == ERROR_NO_MORE_FILES;
+}
 
 //--------------------------------------------------------------------------------------------------
 

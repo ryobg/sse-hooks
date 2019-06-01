@@ -118,7 +118,7 @@ call_minhook (Function&& func, Args&&... args)
 
 template<class Function>
 static bool
-try_call (Function&& func)
+try_call (const char* id, Function&& func)
 {
     sseh_error.clear ();
     try
@@ -127,7 +127,7 @@ try_call (Function&& func)
     }
     catch (std::exception const& ex)
     {
-        sseh_error = __func__ + " "s + ex.what ();
+        sseh_error = id + " "s + ex.what ();
         return false;
     }
     return true;
@@ -288,7 +288,7 @@ sseh_find_address (const char* module, const char* name, void** address)
 SSEH_API int SSEH_CCONV
 sseh_load (const char* filepath)
 {
-    return try_call ([&]
+    return try_call (__func__, [&]
     {
         nlohmann::json j;
         std::ifstream fi (filepath);
@@ -313,7 +313,7 @@ sseh_map_name (const char* name, uintptr_t address)
         return false;
     }
 
-    return try_call ([&]
+    return try_call (__func__, [&]
     {
         sseh_json["map"][name]["target"] = hex_string (address);
     });
@@ -495,7 +495,7 @@ sseh_apply ()
 SSEH_API int SSEH_CCONV
 sseh_identify (const char* pointer, size_t* size, char* json)
 {
-    return try_call ([&]
+    return try_call (__func__, [&]
     {
         auto const& j = sseh_json.at (json_pointer (pointer == "/"s ? "" : pointer));
         if (size)
@@ -508,9 +508,9 @@ sseh_identify (const char* pointer, size_t* size, char* json)
 SSEH_API int SSEH_CCONV
 sseh_merge_patch (const char* json)
 {
-    return try_call ([&]
+    return try_call (__func__, [&]
     {
-        auto j = sseh_json.patch (nlohmann::json (json));
+        auto j = sseh_json.patch (nlohmann::json::parse (json));
         validate (j);
         sseh_json.swap (j);
     });

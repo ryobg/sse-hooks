@@ -142,6 +142,10 @@ if (sseh_load ("sseh.json"))
 
 All names and addresses should be unique. Subsequent dublicates are deleted.
 
+The SKSE plugin added, will sort alphabetically and then merge all
+`Data\SKSE\Plugins\sseh-hooks\*.json` patches (see below). This is an automatic mechanism for
+patching existing mods relying on pre-defined addresses.
+
 ## New mappings at runtime
 
 If the loaded JSON is not enough, a new mapping may be added through `sseh_map_name ()`.
@@ -275,11 +279,11 @@ Below is an example of such document:
             {
                 "0x120ab000":
                 {
-                    "original": "0x4002800",
+                    "original": "0x4002800"
                 },
                 "0x12012000":
                 {
-                    "original": "0x120ab000",
+                    "original": "0x120ab000"
                 }
             }
         },
@@ -293,7 +297,7 @@ Below is an example of such document:
             {
                 "0x120fff00":
                 {
-                    "original": "0x80020",
+                    "original": "0x80020"
                 }
             }
         }

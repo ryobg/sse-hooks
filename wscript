@@ -70,7 +70,7 @@ def build (bld):
         includes = ['share/minhook/include', 'share/minhook/src/'])
     bld.shlib (
         target   = APPNAME, 
-        source   = bld.path.ant_glob ("src/*.cpp", excl=["src/test_*.cpp"]), 
+        source   = bld.path.ant_glob (["src/*.cpp", "share/utils/*.cpp"], excl=["src/test_*.cpp"]), 
         includes = ['src', 'include', 'share/minhook/include', 'share'],
         cxxflags = ['-DSSEH_BUILD_API', '-DSSEH_TIMESTAMP="'+str(_datetime_now())+'"'],
         use      = "minhook")
@@ -78,6 +78,17 @@ def build (bld):
         f = os.path.basename (str (src))
         f = os.path.splitext (f)[0]
         bld.program (target=f, source=[src], includes=['include', 'share'], use=APPNAME)
+
+def pack (bld):
+    import shutil, subprocess
+    shutil.rmtree ("Data", ignore_errors=True)
+    dll = APPNAME+".dll"
+    root = "Data/SKSE/Plugins/"
+    shutil.copytree ("assets/Data", "Data")
+    shutil.copyfile ("out/"+dll, root+dll)
+    subprocess.Popen (["x86_64-w64-mingw32-strip", "-g", root+dll]).communicate ()
+    subprocess.Popen (["7z", "a", APPNAME+"-"+VERSION+".7z", 'Data']).communicate ()
+    shutil.rmtree ("Data", ignore_errors=True)
 
 #---------------------------------------------------------------------------------------------------
 

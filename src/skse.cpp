@@ -40,6 +40,7 @@ typedef std::uint64_t UInt64;
 #include <vector>
 #include <chrono>
 #include <fstream>
+#include <streambuf>
 #include <iomanip>
 
 //--------------------------------------------------------------------------------------------------
@@ -58,7 +59,7 @@ static std::ofstream logfile;
 static void
 open_log ()
 {
-     std::string path;
+    std::string path;
     if (known_folder_path (FOLDERID_Documents, path))
     {
         // Before plugins are loaded, SKSE takes care to create the directiories
@@ -74,9 +75,9 @@ static decltype(logfile)&
 log ()
 {
     // MinGW 4.9.1 have no std::put_time()
-	using std::chrono::system_clock;
-	auto now_c = system_clock::to_time_t (system_clock::now ());
-	auto loc_c = std::localtime (&now_c);
+    using std::chrono::system_clock;
+    auto now_c = system_clock::to_time_t (system_clock::now ());
+    auto loc_c = std::localtime (&now_c);
     logfile << '['
             << 1900 + loc_c->tm_year
             << '-' << std::setw (2) << std::setfill ('0') << loc_c->tm_mon
@@ -103,6 +104,55 @@ log_error ()
         sseh_last_error (&n, &s[0]);
         log () << s << std::endl;
     }
+}
+
+//--------------------------------------------------------------------------------------------------
+
+/// For debug purposes mostly
+
+static void
+log_dump ()
+{
+    size_t n = 0;
+    if (sseh_identify ("/", &n, nullptr) && n)
+    {
+        std::string s (n+1, '\0');
+        sseh_identify ("/", &n, &s[0]);
+        log () << s.c_str () << std::endl;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
+static bool
+merge_patches ()
+{
+    std::string folder = "Data\\SKSE\\Plugins\\sse-hooks\\";
+    std::vector<std::string> files;
+    if (!enumerate_files (folder + "*.json", files))
+        return true;
+
+    std::string content;
+    std::sort (files.begin (), files.end ());
+    for (auto const& file: files)
+    {
+        log () << "Merging " << (folder + file) << std::endl;
+
+        std::ifstream fi (folder + file);
+        if (!fi.is_open ())
+        {
+            log () << "Unable to open " << (folder+file) << " for reading" << std::endl;
+            continue;
+        }
+        content.assign (std::istreambuf_iterator<char> (fi), std::istreambuf_iterator<char> ());
+
+        if (!sseh_merge_patch (content.c_str ()))
+            log_error ();
+
+        log_dump ();
+    }
+
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -179,16 +229,10 @@ SKSEPlugin_Load (SKSEInterface const* skse)
     }
     log () << "Initialized." << std::endl;
 
-    const char* default_json = "Data\\SKSE\\Plugins\\sseh.json";
-    std::ifstream test (default_json);
-    if (test.is_open ()) // Avoid log warnings
+    if (!merge_patches ())
     {
-        test.close ();
-        if (!sseh_load (default_json))
-        {
-            log_error ();
-            log () << "Unable to load " << default_json << std::endl;
-        }
+        log_error ();
+        return false;
     }
 
     return true;

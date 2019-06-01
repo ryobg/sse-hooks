@@ -30,6 +30,7 @@
 #include <nlohmann/json.hpp>
 
 #include <iostream>
+#include <fstream>
 
 //--------------------------------------------------------------------------------------------------
 
@@ -38,7 +39,25 @@ using nlohmann::json;
 typedef json::json_pointer json_pointer;
 
 #define TEST(x) \
-    if (!x) result = false, std::cout << "Test fail " << __FILE__ << ":" << __LINE__ << std::endl;
+    if (!x) result = false, \
+        std::cout << "Test fail " << __FILE__ << ":" << __LINE__ \
+                  << " " << last_error () << std::endl;
+
+//--------------------------------------------------------------------------------------------------
+
+static std::string
+last_error ()
+{
+    size_t n = 0;
+    sseh_last_error (&n, nullptr);
+    if (n)
+    {
+        std::string s (n+1, '\0');
+        sseh_last_error (&n, &s[0]);
+        return s;
+    }
+    return "";
+}
 
 //--------------------------------------------------------------------------------------------------
 
@@ -93,11 +112,30 @@ test_sseh_version ()
 
 //--------------------------------------------------------------------------------------------------
 
+static bool
+test_patching ()
+{
+    bool result = true;
+
+    std::ifstream fi ("test.json");
+    if (!fi.is_open ())
+        return result;
+
+    std::string content;
+    content.assign (std::istreambuf_iterator<char> (fi), std::istreambuf_iterator<char> ());
+    TEST (sseh_merge_patch (content.c_str ()));
+
+    return result;
+}
+
+//--------------------------------------------------------------------------------------------------
+
 int main ()
 {
     int ret = 0;
     ret += test_sseh_version ();
     ret += test_loading ();
+    ret += test_patching ();
     return ret;
 }
 

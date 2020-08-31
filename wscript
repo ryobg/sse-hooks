@@ -29,6 +29,7 @@ Waf is Python (2/3) based build system similar to SCons & Make.
 '''
 
 import os
+import shutil, subprocess
 
 #---------------------------------------------------------------------------------------------------
 
@@ -55,10 +56,10 @@ def configure(conf):
     conf.load('compiler_cxx')
 
     if conf.env['CXX_NAME'] is 'gcc':
-        conf.check_cxx (msg="Checking for '-std=c++14'", cxxflags='-std=c++14') 
+        conf.check_cxx (msg="Checking for '-std=c++17'", cxxflags='-std=c++17') 
         conf.env.append_unique('CXXFLAGS', \
-                ['-std=c++14', "-O2", "-Wall", "-D_UNICODE", "-DUNICODE"])
-        conf.env.append_unique ('STLIB', ['stdc++', 'pthread', 'ole32'])
+                ['-std=c++17', "-O2", "-Wall", "-D_UNICODE", "-DUNICODE"])
+        conf.env.append_unique ('STLIB', ['stdc++', 'pthread', 'ole32', 'version'])
         conf.env.append_unique ('LINKFLAGS', ['-static-libgcc', '-static-libstdc++'])
     elif conf.env['CXX_NAME'] is 'msvc':
         conf.env.append_unique('CXXFLAGS', ['/EHsc', '/MT', '/O2'])
@@ -79,16 +80,25 @@ def build (bld):
         f = os.path.splitext (f)[0]
         bld.program (target=f, source=[src], includes=['include', 'share'], use=APPNAME)
 
-def pack (bld):
-    import shutil, subprocess
+def _pack_asset (bld, folder, name):
     shutil.rmtree ("Data", ignore_errors=True)
+    shutil.copytree ("assets/"+folder+"/Data", "Data")
+    subprocess.Popen (["7z", "a", APPNAME+"-"+name+"-"+VERSION+".7z", 'Data']).communicate ()
+    shutil.rmtree ("Data", ignore_errors=True)
+    
+def pack (bld):
+    shutil.rmtree ("Data", ignore_errors=True)
+    shutil.copytree ("assets/main/Data", "Data")
+    
     dll = APPNAME+".dll"
-    root = "Data/SKSE/Plugins/"
-    shutil.copytree ("assets/Data", "Data")
+    root = "data/skse/plugins/"
     shutil.copyfile ("out/"+dll, root+dll)
     subprocess.Popen (["x86_64-w64-mingw32-strip", "-g", root+dll]).communicate ()
+
     subprocess.Popen (["7z", "a", APPNAME+"-"+VERSION+".7z", 'Data']).communicate ()
     shutil.rmtree ("Data", ignore_errors=True)
+
+    _pack_asset (bld, "optional-addrlib", "addrlib")
 
 #---------------------------------------------------------------------------------------------------
 

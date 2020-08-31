@@ -195,5 +195,12 @@ enumerate_files (std::string const& wildcard, Container& out)
 
 //--------------------------------------------------------------------------------------------------
 
+/// For the current process' file, look at its meta and find either the product or file version
+/// and parse them as four numbers.
+
+bool process_file_version (int& major, int& minor, int& revision, int& build);
+
+//--------------------------------------------------------------------------------------------------
+
 #endif
 

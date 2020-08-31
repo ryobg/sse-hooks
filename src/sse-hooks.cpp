@@ -44,6 +44,8 @@
 #include <nlohmann/json.hpp>
 #include <utils/winutils.hpp>
 
+#include "addrlib.hpp"
+
 //--------------------------------------------------------------------------------------------------
 
 using namespace std::string_literals;
@@ -62,6 +64,9 @@ std::map<std::string, int> sseh_profiles;
 
 /// Our hook into Minhook to allow multi-state
 extern switch_globals (std::size_t);
+
+/// Allow clients to interface with the Address Library database
+extern address_library addrlib;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -324,18 +329,36 @@ sseh_map_name (const char* name, uintptr_t address)
 SSEH_API int SSEH_CCONV
 sseh_find_target (const char* name, uintptr_t* target)
 {
+    std::string ex_what;
     sseh_error.clear ();
+
     try
     {
         auto const& json = sseh_json.at (json_pointer ("/map/"s + name + "/target"s));
         if (!is_pointer (json, target))
             throw std::runtime_error ("target not a pointer");
+        return true;
     }
     catch (std::exception const& ex)
     {
-        sseh_error = __func__ + " "s + ex.what ();
-        return false;
+        ex_what = ex.what ();
     }
+
+    try // Optional
+    {
+        if (auto v = addrlib.find (name); v)
+        {
+            if (target) *target = v;
+        }
+        else
+        {
+            sseh_error = __func__ + " "s + ex_what;
+            return false;
+        }
+    }
+    catch (std::exception const&)
+    {}
+
     return true;
 }
 

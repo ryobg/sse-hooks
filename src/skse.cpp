@@ -32,6 +32,8 @@
 #include <sse-hooks/sse-hooks.h>
 #include <utils/winutils.hpp>
 
+#include "addrlib.hpp"
+
 #include <cstdint>
 typedef std::uint32_t UInt32;
 typedef std::uint64_t UInt64;
@@ -54,6 +56,9 @@ SKSEMessagingInterface* messages = nullptr;
 /// Log file in pre-defined location
 static std::ofstream logfile;
 
+/// Optional integer <> relative address storage access
+address_library addrlib;
+
 //--------------------------------------------------------------------------------------------------
 
 static void
@@ -65,13 +70,13 @@ open_log ()
         // Before plugins are loaded, SKSE takes care to create the directiories
         path += "\\My Games\\Skyrim Special Edition\\SKSE\\";
     }
-    path += "sseh.log";
+    path += "sse-hooks.log";
     logfile.open (path);
 }
 
 //--------------------------------------------------------------------------------------------------
 
-static decltype(logfile)&
+decltype(logfile)&
 log ()
 {
     // MinGW 4.9.1 have no std::put_time()
@@ -157,6 +162,23 @@ merge_patches ()
 
 //--------------------------------------------------------------------------------------------------
 
+static void
+load_addrlib ()
+{
+    int maj, min, pat, bld;
+    if (process_file_version (maj, min, pat, bld))
+    {
+        if (!addrlib.load_txt ())
+            log () << "Unable to load Address Library name mappings." << std::endl;
+
+        if (!addrlib.load_bin (maj, min, pat, bld))
+            log () << "Unable to load Address Library database "
+                << maj << '.' << min << '.' << pat << '.' << bld <<std::endl;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
 /// SKSE Post Load allows plugins to register as listeners to SSEH
 /// Hence SKSE Post-Post Load is where the interface is emitted and default hooks applied
 
@@ -234,6 +256,8 @@ SKSEPlugin_Load (SKSEInterface const* skse)
         log_error ();
         return false;
     }
+
+    load_addrlib ();
 
     return true;
 }

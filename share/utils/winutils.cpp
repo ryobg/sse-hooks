@@ -24,6 +24,7 @@
 
 #include <utils/winutils.hpp>
 #include <map>
+#include <charconv>
 
 //--------------------------------------------------------------------------------------------------
 
@@ -46,6 +47,60 @@ format_utf8message (DWORD error_code)
 
     ::LocalFree (buff);
     return m;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool
+process_file_version (int& major, int& minor, int& revision, int& build)
+{
+    std::array<TCHAR, MAX_PATH> filename;
+    ::GetModuleFileName (nullptr, filename.data (), MAX_PATH);
+
+    DWORD handle;
+    DWORD vsize = ::GetFileVersionInfoSize (filename.data (), &handle);
+
+    if (!vsize)
+        return false;
+
+    std::vector<char> version (vsize);
+    if (!::GetFileVersionInfo (filename.data (), 0, vsize, version.data ()))
+        return false;
+
+    std::array<int*, 4> num { &major, &minor, &revision, &build };
+    auto parse_ints = [&num] (const char* begin, const char* end)
+    {
+        for (auto out = num.begin (); out != num.end (); ++out)
+        {
+            if (auto [p, e] = std::from_chars (begin, end, **out); e == std::errc ())
+            {
+                if (p != end) begin = ++p;
+                else return std::next (out) == num.end ();
+            }
+            else return false;
+        }
+        return true;
+    };
+
+    UINT len = 0;
+    char const* str = nullptr;
+    if (::VerQueryValueA (version.data (), "\\StringFileInfo\\040904B0\\ProductVersion",
+                (LPVOID*) &str, &len) && len && str && *str)
+    {
+        if (parse_ints (str, str + len))
+            return true;
+    }
+
+    len = 0;
+    str = nullptr;
+    if (::VerQueryValueA (version.data (), "\\StringFileInfo\\040904B0\\FileVersion",
+                (LPVOID*) &str, &len) && len && str && *str)
+    {
+        if (parse_ints (str, str + len))
+            return true;
+    }
+
+    return false;
 }
 
 //--------------------------------------------------------------------------------------------------

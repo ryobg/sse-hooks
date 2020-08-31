@@ -217,6 +217,14 @@ typedef int (SSEH_CCONV* sseh_map_name_t) (const char*, uintptr_t);
  * make sense only if there is entry already for them after a detour. If
  * an address of such a method is needed, see #sseh_find_address().
  *
+ * As a back up plan, this function tries to find an Address Library id
+ * assigned to this name. Then it searches an address for this id. The
+ * mappings between names and that library ids are done in text files
+ * stored in the "data\skse\plugins\sse-hooks\addrlib-names-*.txt" files.
+ * Each file consist of name and id on separate lines. Dublicated names
+ * are not allowed, dublicated ids are fine. Text lines not conforming
+ * to <start-of-row><name><one or more empty spaces><id> are ignored.
+ *
  * @param[in] name to search the target address for
  * @param[out] target to receive the found value
  * @returns non-zero on success, otherwise see #sseh_last_error ()

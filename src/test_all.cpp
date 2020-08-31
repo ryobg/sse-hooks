@@ -31,6 +31,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <charconv>
 
 //--------------------------------------------------------------------------------------------------
 
@@ -130,12 +131,44 @@ test_patching ()
 
 //--------------------------------------------------------------------------------------------------
 
+bool test_parse_ints ()
+{
+    int a, b, c, d;
+    std::array<int*, 4> num { &a, &b, &c, &d };
+    auto parse_ints = [&num] (const char* begin, const char* end)
+    {
+        for (auto out = num.begin (); out != num.end (); ++out)
+        {
+            if (auto [p, e] = std::from_chars (begin, end, **out); e == std::errc ())
+            {
+                if (p != end) begin = ++p;
+                else return std::next (out) == num.end ();
+            }
+            else return false;
+        }
+        return true;
+    };
+
+    bool result = true;
+    const char* inv[] = {"", ".", ".1", "1.", "1.2", ".1.2.", "1.2.3", "..3.4", "1.2.3."};
+    for (std::size_t i = 0; i < sizeof (inv) / sizeof (inv[0]); ++i)
+        TEST (!parse_ints (inv[i], inv[i] + std::strlen (inv[i])));
+    const char* val[] = {"1.2.3.4", "1.2.3.4..", "1.2.3.4.5.6" };
+    for (std::size_t i = 0; i < sizeof (val) / sizeof (val[0]); ++i)
+        if (!parse_ints (val[i], val[i] + std::strlen (val[i])))
+            std::cout << __func__ << " failed with " << val[i] << std::endl;
+    return result;
+}
+
+//--------------------------------------------------------------------------------------------------
+
 int main ()
 {
     int ret = 0;
     ret += test_sseh_version ();
     ret += test_loading ();
     ret += test_patching ();
+    ret += test_parse_ints ();
     return ret;
 }
 

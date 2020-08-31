@@ -1,0 +1,17 @@
+GameTime                          ?
+GameTime.Offset                   ?
+PlayerCharacter              517014
+PlayerCharacter.Position          ?
+PlayerCharacter.Cell              ?
+PlayerCharacter.Worldspace        ?
+Worldspace.Fullname               ?
+Cell.Fullname                     ?
+
+ConsoleLog                   515064
+ConsoleLog.VPrint             50180
+Console.SelectedReference    519394
+FormFactories                514355
+FormFactories.Enabled        514349
+HandleManager.SmartPointer    12204
+Script.CompileRun             21416
+

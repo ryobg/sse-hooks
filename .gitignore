@@ -1,6 +1,6 @@
 *.swp
 .lock-waf*
-.waf-*
+.waf3-*
 *.7z
 
 out/

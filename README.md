@@ -317,6 +317,11 @@ Below is an example of such document:
 * Python 3.x for the build system (2.x may work too)
 * C++14 compatible compiler available on the PATH
 
+For building under Windows10/WSL with MinGW, use:
+```
+CXX=x86_64-w64-mingw32-g++-posix AR=x86_64-w64-mingw32-ar ./waf configure
+```
+
 ## License
 
 LGPLv3, see the LICENSE.md file. Parts in the `share/` folder have their own license.

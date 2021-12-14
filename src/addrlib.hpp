@@ -124,14 +124,14 @@ public:
         data.clear ();
 
         std::stringstream ss;
-        ss << "Data\\SKSE\\Plugins\\version-"
+        ss << "Data\\SKSE\\Plugins\\versionlib-"
             << major << '-' << minor << '-' << revision << '-' << build << ".bin";
 
 		std::ifstream file (ss.str (), std::ios::binary);
 		if (!file.is_open ())
 			return false;
 
-		if (int format = read<int> (file); format != 1)
+		if (int format = read<int> (file); format != 2)
 			return false;
 
         // Version fields, unused - relying on the filename instead.

@@ -56,9 +56,9 @@ def configure(conf):
     conf.load('compiler_cxx')
 
     if conf.env['CXX_NAME'] == 'gcc':
-        conf.check_cxx (msg="Checking for '-std=c++17'", cxxflags='-std=c++17') 
+        conf.check_cxx (msg="Checking for '-std=c++20'", cxxflags='-std=c++20') 
         conf.env.append_unique('CXXFLAGS', \
-                ['-std=c++17', "-O2", "-Wall", "-D_UNICODE", "-DUNICODE"])
+                ['-std=c++20', "-O2", "-Wall", "-D_UNICODE", "-DUNICODE"])
         conf.env.append_unique ('STLIB', ['stdc++', 'pthread', 'ole32', 'version'])
         conf.env.append_unique ('LINKFLAGS', ['-static-libgcc', '-static-libstdc++'])
     elif conf.env['CXX_NAME'] == 'msvc':
